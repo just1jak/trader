@@ -1,0 +1,13 @@
+[
+  {
+    "filing_date": "2026-04-20",
+    "transaction_date": "2026-04-18",
+    "member": "Sen. Example",
+    "state": "NY",
+    "ticker": "MSFT",
+    "asset_description": "Microsoft Corporation",
+    "transaction_type": "Sale",
+    "amount": "$50,001 - $100,000",
+    "comment": ""
+  }
+]

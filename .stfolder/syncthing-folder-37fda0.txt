@@ -1,0 +1,5 @@
+# This directory is a Syncthing folder marker.
+# Do not delete.
+
+folderID: ut5uz-5nuda
+created: 2026-04-15T05:03:34Z

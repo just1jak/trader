@@ -1,0 +1,13 @@
+[
+  {
+    "filing_date": "2026-04-20",
+    "transaction_date": "2026-04-18",
+    "member": "Rep. Example",
+    "district": "CA-12",
+    "ticker": "AAPL",
+    "asset_description": "Apple Inc.",
+    "transaction_type": "Purchase",
+    "amount": "$15,001 - $50,000",
+    "comment": ""
+  }
+]

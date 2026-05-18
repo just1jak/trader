@@ -1,0 +1,113 @@
+{
+  "projects": {
+    "smart-money-tracker": {
+      "name": "Smart Money Tracker",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/smart-money-tracker.md"
+    },
+    "congressional-trading": {
+      "name": "Congressional Trading",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/congressional-trading.md"
+    },
+    "stem-with-roo-remotion": {
+      "name": "Stem With Roo Remotion",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/Projects/stem-with-roo-remotion"
+    },
+    "parkwood-accord": {
+      "name": "Parkwood Accord",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/parkwood-accord.md"
+    },
+    "stem-with-roo": {
+      "name": "Stem With Roo",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/stem-with-roo.md"
+    },
+    "campingsniper": {
+      "name": "Campingsniper",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/campingsniper.md"
+    },
+    "glamping-str": {
+      "name": "Glamping Str",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/glamping-str.md"
+    },
+    "land-sales": {
+      "name": "Land Sales",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/land-sales.md"
+    },
+    "a-liner-replication": {
+      "name": "A Liner Replication",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/a-liner-replication.md"
+    },
+    "self-hosting-course": {
+      "name": "Self Hosting Course",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/self-hosting-course.md"
+    },
+    "ios-apps": {
+      "name": "Ios Apps",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/Projects/ios-apps"
+    },
+    "sync-setup": {
+      "name": "Sync Setup",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/Projects/Sync-Setup"
+    },
+    "path-to-1m": {
+      "name": "Path To 1M",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/path-to-1m.md"
+    },
+    "paper-trading": {
+      "name": "Paper Trading",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/paper-trading.md"
+    },
+    "cleanstreak": {
+      "name": "Cleanstreak",
+      "status": "active",
+      "priority": "medium",
+      "kb_path": "/mnt/kb/memory/projects/cleanstreak.md"
+    },
+    "pill-counting-app": {
+      "status": "active",
+      "priority": "high",
+      "description": "iOS app for pill counting",
+      "kb_path": "/mnt/kb/projects/pill-counting-app/"
+    },
+    "luna": {
+      "status": "active",
+      "priority": "medium",
+      "description": "Project Luna",
+      "kb_path": "/mnt/kb/projects/luna/"
+    },
+    "job-search-shields": {
+      "status": "active",
+      "priority": "medium",
+      "description": "Job search automation and shields",
+      "kb_path": "/mnt/kb/projects/job-search-shields/"
+    }
+  },
+  "last_updated": "2026-05-06T22:15:00Z"
+}

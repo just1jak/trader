@@ -1,0 +1,25 @@
+// Build & dependency dirs (never useful to sync)
+node_modules
+.venv
+venv
+__pycache__
+.tox
+.pytest_cache
+
+// Build outputs
+dist
+build
+.next
+.nuxt
+.cache
+.parcel-cache
+target
+
+// Editor/OS noise
+.DS_Store
+Thumbs.db
+.idea
+.vscode/.history
+
+// Lockfile-style giants
+*.tsbuildinfo
