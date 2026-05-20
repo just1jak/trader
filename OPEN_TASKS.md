@@ -24,7 +24,11 @@ Last seed: 2026-05-08 (from /mnt/kb/projects/TASK_LIST.md + glamping-str/*)
 
 ### STEM with Roo (P0 — 60% complete, ship this month)
 
-- [in-progress] (stem-with-roo) P0 — Finish book illustrations (Roo's First Circuit Adventure, 20+ pages) :: all pages illustrated + submitted to KDP
+**Book Outline + AI Image Plan (DELIVERED)** — See `/mnt/kb/Projects/stem-with-roo/STRATEGY.md` for 5-chapter outline, AI generation plan (recommend DALL-E 3, $1.44 total), and 4-week production timeline.
+
+- [ready] (stem-with-roo) P0 — Finalize book outline + pick AI image tool (DALL-E 3 vs Midjourney) :: decision made, tool selected
+- [ready] (stem-with-roo) P0 — Generate + approve 3 sample images (Chapter 1: What's a Circuit?) :: 3 images approved, ready for batch gen
+- [in-progress] (stem-with-roo) P0 — Batch-generate all 24 book illustrations via AI :: all images in /mnt/kb/Projects/stem-with-roo/images/
 - [in-progress] (stem-with-roo) P0 — Render + edit Video #1 (circuit basics intro, ~3 min) :: uploaded to /mnt/kb/Projects/stem-with-roo/videos/
 - [ready] (stem-with-roo) P0 — Create YouTube channel + branding (banner, bio, playlists) :: channel live, branding applied
 - [ready] (stem-with-roo) P0 — Publish Video #1 to YouTube, TikTok, Instagram Reels simultaneously :: all 3 platforms live same day
@@ -36,21 +40,39 @@ Last seed: 2026-05-08 (from /mnt/kb/projects/TASK_LIST.md + glamping-str/*)
 ### Apps-to-Launch (P1 — 25% complete, parallel execution)
 
 #### CleanStreak (sobriety app, revenue-ready)
-- [ready] (cleanstreak) P1 — Launch on App Store (from TestFlight build) :: app live, App Store URL in STRATEGY.md
-- [ready] (cleanstreak) P1 — Execute social media launch (TikTok, Instagram, Reddit, Twitter, LinkedIn) :: 3 posts/week for 8 weeks, URLs + engagement tracked in LOG.md
-- [ready] (cleanstreak) P1 — Set up paid ads (Facebook + Instagram, $500/month) :: campaign live, ROAS tracked weekly in LOG.md
-- [ready] (cleanstreak) P1 — Market analysis for advertising + monetization :: comprehensive report in STRATEGY.md (ad angles, pricing, partnership opportunities)
+
+**Market Analysis + Ad Strategy (DELIVERED)** — See `/mnt/kb/Projects/apps-to-launch/CleanStreak/MARKET_ANALYSIS.md` (TAM $1.24B, competitors, pricing) + `/mnt/kb/Projects/apps-to-launch/CleanStreak/AD_STRATEGY.md` (platform-by-platform guide, $500/mo budget split, CPI benchmarks, setup steps).
+
+- [ready] (cleanstreak) P0 — Finalize monetization: freemium ($6.99/mo Premium) + confirm feature tiers :: pricing doc approved
+- [ready] (cleanstreak) P0 — Set up ad accounts (Facebook Ads Manager, TikTok, Google App Ads, Reddit) :: all 4 platforms configured
+- [ready] (cleanstreak) P0 — Generate 3 ad creatives (emotional, community, data-driven angles) :: assets ready for upload
+- [ready] (cleanstreak) P1 — Launch on App Store (from TestFlight build) :: app live, App Store URL in LOG.md
+- [ready] (cleanstreak) P1 — Start paid ads (soft launch 40% budget week 2, ramp to 100% week 4) :: $500/month spend live, KPIs tracked
+- [ready] (cleanstreak) P1 — Execute social media launch (TikTok, Instagram, Reddit, r/stopdrinking + r/IWNDWYT) :: 3 posts/week for 8 weeks, engagement tracked
 - [ready] (cleanstreak) P2 — Email launch sequence (50-person waitlist outreach) :: conversion rate logged in LOG.md
-- [ready] (cleanstreak) P2 — Partner outreach to sobriety/wellness communities :: 5+ community managers contacted, responses tracked
+- [ready] (cleanstreak) P2 — Partner outreach to sobriety/wellness communities :: 5+ community managers contacted per AD_STRATEGY.md
 
 #### 75 Hard App (habit-tracking app)
-- [ready] (75-hard) P1 — Finalize market analysis (shared with CleanStreak) :: integrate findings into STRATEGY.md
-- [ready] (75-hard) P1 — Define MVP + wireframes (core: workouts, water, diet, reading, photo proof) :: documented in STRATEGY.md
-- [ready] (75-hard) P1 — Design shared expense/group challenges UI mockup :: Figma approved by user
+
+**Market Analysis + Revenue Model + Ad Strategy (DELIVERED)** — See `/mnt/kb/Projects/apps-to-launch/75-Hard/STRATEGY.md` (TAM 15–20M users, Freemium $9.99/mo, $250/mo ad budget split, Y1 revenue $9.3M–12.9M projection).
+
+- [ready] (75-hard) P1 — Finalize MVP + wireframes (core: workouts, water, diet, reading, photo proof) :: feature list locked
+- [ready] (75-hard) P1 — Build App Store assets (icon, 5 screenshots, description, keywords) :: Figma → export ready
+- [ready] (75-hard) P1 — Finalize monetization: Freemium ($4.99–9.99/mo Premium, cosmetics IAP) :: pricing + feature tiers approved
+- [ready] (75-hard) P1 — Set up ad accounts (TikTok 48%, Facebook/Instagram 36%, Google 16%) :: accounts configured, creatives ready
+- [ready] (75-hard) P1 — Submit to App Store + Google Play :: live in stores
+- [ready] (75-hard) P1 — Launch ads ($250/month) :: campaigns live, CPI ~$2.88–3.15
 
 #### Luna (period tracking app)
-- [ready] (luna) P1 — Define MVP + user persona :: gather user details, document core features in STRATEGY.md
-- [ready] (luna) P1 — Wireframe + prototype MVP :: Figma clickable prototype live
+
+**Market Analysis + Revenue Model + Ad Strategy (DELIVERED)** — See `/mnt/kb/Projects/apps-to-launch/Luna/STRATEGY.md` (TAM $2.3B, 25–35M addressable, Freemium $4.99–7.99/mo, privacy-first angle vs Flo, Y1 revenue $13.8M–16.9M projection).
+
+- [ready] (luna) P1 — Define MVP + user persona (cycle syncing, privacy-first, telehealth integration) :: feature list locked, STRATEGY.md complete
+- [ready] (luna) P1 — Build App Store assets (icon, screenshots, medical disclaimers, health data practices) :: Figma → export ready
+- [ready] (luna) P1 — Finalize monetization: Freemium ($4.99 Premium, $7.99 Plus w/ telehealth) :: pricing + feature tiers approved
+- [ready] (luna) P1 — Set up ad accounts (TikTok 40%, Facebook/Instagram 44%, Google 16%) :: accounts configured, creatives ready
+- [ready] (luna) P1 — Submit to App Store + Google Play :: live in stores
+- [ready] (luna) P1 — Launch ads ($250/month) :: campaigns live, CPI ~$3.00, payback ~6–8 days
 
 ---
 
