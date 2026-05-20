@@ -20,7 +20,41 @@ Last seed: 2026-05-08 (from /mnt/kb/projects/TASK_LIST.md + glamping-str/*)
 
 ---
 
-## 🔥 Active burndown — glamping-str (P0)
+## 🔥 Critical Path — STEM with Roo + Apps-to-Launch
+
+### STEM with Roo (P0 — 60% complete, ship this month)
+
+- [in-progress] (stem-with-roo) P0 — Finish book illustrations (Roo's First Circuit Adventure, 20+ pages) :: all pages illustrated + submitted to KDP
+- [in-progress] (stem-with-roo) P0 — Render + edit Video #1 (circuit basics intro, ~3 min) :: uploaded to /mnt/kb/Projects/stem-with-roo/videos/
+- [ready] (stem-with-roo) P0 — Create YouTube channel + branding (banner, bio, playlists) :: channel live, branding applied
+- [ready] (stem-with-roo) P0 — Publish Video #1 to YouTube, TikTok, Instagram Reels simultaneously :: all 3 platforms live same day
+- [ready] (stem-with-roo) P1 — Set up Patreon (3 tiers: $2, $5, $15) :: live + linked from YouTube channel
+- [ready] (stem-with-roo) P1 — Build mailing list (Substack or ConvertKit) :: live on YouTube channel about section
+- [ready] (stem-with-roo) P1 — Render Videos #2–4 (series topics: conductors, switches) :: 3 vids, 15–20 sec each, ready for queue
+- [ready] (stem-with-roo) P2 — Create content calendar (12-week: 3 videos/week + social clips) :: published to Google Calendar or Notion, shared with Roo
+
+### Apps-to-Launch (P1 — 25% complete, parallel execution)
+
+#### CleanStreak (sobriety app, revenue-ready)
+- [ready] (cleanstreak) P1 — Launch on App Store (from TestFlight build) :: app live, App Store URL in STRATEGY.md
+- [ready] (cleanstreak) P1 — Execute social media launch (TikTok, Instagram, Reddit, Twitter, LinkedIn) :: 3 posts/week for 8 weeks, URLs + engagement tracked in LOG.md
+- [ready] (cleanstreak) P1 — Set up paid ads (Facebook + Instagram, $500/month) :: campaign live, ROAS tracked weekly in LOG.md
+- [ready] (cleanstreak) P1 — Market analysis for advertising + monetization :: comprehensive report in STRATEGY.md (ad angles, pricing, partnership opportunities)
+- [ready] (cleanstreak) P2 — Email launch sequence (50-person waitlist outreach) :: conversion rate logged in LOG.md
+- [ready] (cleanstreak) P2 — Partner outreach to sobriety/wellness communities :: 5+ community managers contacted, responses tracked
+
+#### 75 Hard App (habit-tracking app)
+- [ready] (75-hard) P1 — Finalize market analysis (shared with CleanStreak) :: integrate findings into STRATEGY.md
+- [ready] (75-hard) P1 — Define MVP + wireframes (core: workouts, water, diet, reading, photo proof) :: documented in STRATEGY.md
+- [ready] (75-hard) P1 — Design shared expense/group challenges UI mockup :: Figma approved by user
+
+#### Luna (period tracking app)
+- [ready] (luna) P1 — Define MVP + user persona :: gather user details, document core features in STRATEGY.md
+- [ready] (luna) P1 — Wireframe + prototype MVP :: Figma clickable prototype live
+
+---
+
+## 🔥 Active burndown — glamping-str (P0 regulatory, async)
 
 - [in-progress] (glamping-str) P0 — Site visit: 20604 Little Basin Rd, Boulder Creek :: remote research completed (coords, elevation, zoning notes in SITE_MAP.md); physical visit pending user escalation.
 - [blocked] (glamping-str) P0 — Find Santa Cruz County Code definition of "Permanent Structure" (Chapter 10.16) :: automated retrieval blocked (HTTP 403 on codepublishing.com, JS-rendered on library.municode.com). Manual research required: request PDF from County Planning Dept (831-454-2702) or schedule pre-application meeting with Zoning Administrator (clarifies in glamping context). Completed: identified research sources and blockers in REGULATORY_LOG.md.
@@ -33,7 +67,7 @@ Last seed: 2026-05-08 (from /mnt/kb/projects/TASK_LIST.md + glamping-str/*)
 - [shipped] (glamping-str) P2 — Site map: topographic flat-spot identification :: 3 candidate spots identified + pros/cons logged (≤5% slope), via public topo/GIS; on-site verification pending
 - [blocked] (glamping-str) P2 — Site map: access vector (sedan vs 4x4) :: blocked on physical site visit
 - [blocked] (glamping-str) P2 — Site map: privacy buffer from neighbors :: blocked on physical site visit
-- [ready] (glamping-str) P2 — Comparable Hipcamp/Airbnb listings within 30 mi of parcel :: 5+ listings logged with pricing, occupancy clues, amenity tier
+- [in-progress] (glamping-str) P2 — Comparable Hipcamp/Airbnb listings within 30 mi of parcel :: researched via Hipcamp query (Boulder Creek radius); 8+ active primitive/glamping options logged (avg $45–120/night, 60-85% occ hints, fire pit/water access common) to glamping-str/comps.md; occupancy & pricing detail pending API scrape
 
 ## 🟦 Parkwood Accord (P2 — lifestyle app)
 
