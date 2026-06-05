@@ -34,12 +34,12 @@ def run_backtest(data: pd.DataFrame, strategy_name: str, params: dict):
     # For a more realistic backtest, you'd need to consider slippage, commissions, etc.
 
     # Calculate returns: daily (or per period) return of the asset
-    data['returns'] = data['close'].pct_change()
+    data['returns'] = data['close'].pct_change().fillna(0)
 
     # Strategy returns: we are long when signal == 1, short when signal == -1, flat otherwise.
     # We'll assume we can reverse instantly (no delay) and that we earn the asset's return when long,
     # and lose the asset's return when short (i.e., we short the asset).
-    data['strategy_returns'] = data['returns'] * signals.shift(1)  # shift to avoid lookahead
+    data['strategy_returns'] = (data['returns'] * signals.shift(1)).fillna(0)  # shift to avoid lookahead
 
     # Calculate cumulative returns
     data['cumulative_returns'] = (1 + data['strategy_returns']).cumprod()
@@ -53,7 +53,8 @@ def run_backtest(data: pd.DataFrame, strategy_name: str, params: dict):
     # For simplicity, we'll use the sample Sharpe (not annualized) and note the frequency.
     # For intraday, you'd want to annualize by sqrt(252*number_of_periods_per_day)
     # We'll leave it as is for now.
-    sharpe = data['strategy_returns'].mean() / data['strategy_returns'].std() * np.sqrt(252)  # annualized assuming daily data
+    strategy_std = data['strategy_returns'].std()
+    sharpe = 0 if strategy_std == 0 or np.isnan(strategy_std) else data['strategy_returns'].mean() / strategy_std * np.sqrt(252)
 
     # Max drawdown
     roll_max = data['cumulative_returns'].cummax()
