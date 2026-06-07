@@ -5,6 +5,8 @@ A Flask + React application for backtesting and paper trading futures strategies
 ## Features
 - Backtesting engine with pluggable strategies
 - Historical data fetch from Tradovate (configurable)
+- Read-only E*TRADE quote and options-chain API layer
+- Settings page for E*TRADE, Tradovate, and reserved Polygon provider credentials
 - React UI for configuring and visualizing backtests
 - Dockerized for easy deployment
 
@@ -29,6 +31,18 @@ PORT=5001 python3 app.py
 cd ../frontend
 npm run dev
 ```
+
+## Provider Settings
+
+Use the frontend `Settings` page to enter provider details. The backend saves those values into `paper-trading/.env`; secret values are masked when returned to the browser, and blank saved secret inputs keep their existing value.
+
+Supported settings today:
+
+- E*TRADE OAuth market-data credentials for quotes, expirations, and option chains.
+- Tradovate credentials for historical futures candles.
+- Polygon API key storage only; Polygon is not wired into backtests yet.
+
+Docker compose mounts `.env` into the backend container so Settings changes persist across rebuilds.
 
 ## Development
 - Backend: Python 3.12, Flask

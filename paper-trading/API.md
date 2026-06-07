@@ -14,6 +14,18 @@ All routes are mounted under `/api/v1`.
   - Returns candles for inspection before a run.
   - Query params: `symbol`, `timeframe`, `from`, `to`, `source`.
 
+## Provider Settings
+
+- `GET /settings/providers`
+  - Returns supported providers, configured/missing status, and masked secret values.
+  - The browser never receives raw secret values.
+
+- `POST /settings/providers/{provider_key}`
+  - Saves provider settings to the backend `.env` file.
+  - Body shape: `{ "values": { "ENV_KEY": "value" } }`.
+  - Supported provider keys: `etrade`, `tradovate`, `polygon`.
+  - Blank submitted fields are ignored, so a blank saved secret input keeps the existing value.
+
 ## E*TRADE Market Data
 
 The E*TRADE layer is read-only. It does not place, preview, modify, or cancel orders.

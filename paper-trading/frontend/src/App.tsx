@@ -69,6 +69,22 @@ type DataPreview = {
 
 type TradeFilter = 'all' | 'winners' | 'losers';
 
+type ProviderField = {
+  key: string;
+  label: string;
+  secret: boolean;
+  configured: boolean;
+  value: string;
+};
+
+type ProviderSettings = {
+  key: string;
+  label: string;
+  description: string;
+  configured: boolean;
+  fields: ProviderField[];
+};
+
 const strategyOptions: Array<{
   key: StrategyKey;
   label: string;
@@ -301,6 +317,9 @@ function App() {
   const [apiHealth, setApiHealth] = useState<ApiHealth | null>(null);
   const [backendStrategies, setBackendStrategies] = useState<Array<{ key: string; label: string }>>([]);
   const [dataPreview, setDataPreview] = useState<DataPreview | null>(null);
+  const [providerSettings, setProviderSettings] = useState<ProviderSettings[]>([]);
+  const [providerForms, setProviderForms] = useState<Record<string, Record<string, string>>>({});
+  const [savingProvider, setSavingProvider] = useState<string | null>(null);
   const [chartRange, setChartRange] = useState('All');
   const [tradeFilter, setTradeFilter] = useState<TradeFilter>('all');
   const [lastAction, setLastAction] = useState('Waiting for first backend run');
@@ -325,6 +344,7 @@ function App() {
       const [health, strategies] = await Promise.all([
         callApi<ApiHealth>('/api/v1/health'),
         callApi<{ strategies: Array<{ key: string; label: string }> }>('/api/v1/strategies'),
+        loadProviderSettings(),
       ]);
       if (health) setApiHealth(health);
       if (strategies?.strategies) setBackendStrategies(strategies.strategies);
@@ -444,6 +464,39 @@ function App() {
     setLastAction(`Exported ${filteredTrades.length} trades to CSV`);
   };
 
+  const loadProviderSettings = async () => {
+    const data = await callApi<{ providers: ProviderSettings[] }>('/api/v1/settings/providers');
+    if (data?.providers) setProviderSettings(data.providers);
+    return data;
+  };
+
+  const updateProviderField = (providerKey: string, fieldKey: string, value: string) => {
+    setProviderForms((previous) => ({
+      ...previous,
+      [providerKey]: {
+        ...(previous[providerKey] ?? {}),
+        [fieldKey]: value,
+      },
+    }));
+  };
+
+  const saveProviderSettings = async (providerKey: string) => {
+    setSavingProvider(providerKey);
+    const data = await callApi<{ providers: ProviderSettings[] }>(`/api/v1/settings/providers/${providerKey}`, {
+      method: 'POST',
+      body: JSON.stringify({ values: providerForms[providerKey] ?? {} }),
+    });
+    if (data?.providers) {
+      setProviderSettings(data.providers);
+      setProviderForms((previous) => ({ ...previous, [providerKey]: {} }));
+      const savedProvider = data.providers.find((provider) => provider.key === providerKey);
+      setLastAction(`${savedProvider?.label ?? providerKey} settings saved`);
+      const health = await callApi<ApiHealth>('/api/v1/health');
+      if (health) setApiHealth(health);
+    }
+    setSavingProvider(null);
+  };
+
   return (
     <div className="app-shell">
       <aside className="side-rail" aria-label="Primary navigation">
@@ -505,7 +558,12 @@ function App() {
             apiHealth={apiHealth}
             backendStrategies={backendStrategies}
             exportTradesCsv={exportTradesCsv}
+            providerForms={providerForms}
+            providerSettings={providerSettings}
             results={results}
+            saveProviderSettings={saveProviderSettings}
+            savingProvider={savingProvider}
+            updateProviderField={updateProviderField}
           />
         ) : (
           <>
@@ -666,13 +724,23 @@ function ModulePanel({
   apiHealth,
   backendStrategies,
   exportTradesCsv,
+  providerForms,
+  providerSettings,
   results,
+  saveProviderSettings,
+  savingProvider,
+  updateProviderField,
 }: {
   activeNav: string;
   apiHealth: ApiHealth | null;
   backendStrategies: Array<{ key: string; label: string }>;
   exportTradesCsv: () => void;
+  providerForms: Record<string, Record<string, string>>;
+  providerSettings: ProviderSettings[];
   results: BacktestResults;
+  saveProviderSettings: (providerKey: string) => void;
+  savingProvider: string | null;
+  updateProviderField: (providerKey: string, fieldKey: string, value: string) => void;
 }) {
   const routeEntries = apiHealth ? Object.entries(apiHealth.routes) : [];
 
@@ -728,6 +796,54 @@ function ModulePanel({
             </button>
           </article>
         )}
+
+        {activeNav === 'Settings' &&
+          providerSettings.map((provider) => (
+            <article className="module-card provider-card" key={provider.key}>
+              <div className="provider-card-header">
+                <div>
+                  <h3>{provider.label}</h3>
+                  <p>{provider.description}</p>
+                </div>
+                <strong className={provider.configured ? 'module-status-ok' : 'module-status-warn'}>
+                  {provider.configured ? 'Configured' : 'Missing keys'}
+                </strong>
+              </div>
+
+              <div className="provider-fields">
+                {provider.fields.map((field) => (
+                  <label className="provider-field" key={field.key}>
+                    <span>
+                      {field.label}
+                      {field.configured && field.secret ? <small> saved as {field.value}</small> : null}
+                    </span>
+                    {field.key === 'ETRADE_ENV' ? (
+                      <select
+                        value={providerForms[provider.key]?.[field.key] ?? field.value ?? 'sandbox'}
+                        onChange={(event) => updateProviderField(provider.key, field.key, event.target.value)}
+                      >
+                        <option value="sandbox">sandbox</option>
+                        <option value="live">live</option>
+                      </select>
+                    ) : (
+                      <input
+                        autoComplete="off"
+                        placeholder={field.secret ? (field.configured ? 'Leave blank to keep saved value' : 'Paste key or secret') : field.value}
+                        type={field.secret ? 'password' : 'text'}
+                        value={providerForms[provider.key]?.[field.key] ?? (field.secret ? '' : field.value ?? '')}
+                        onChange={(event) => updateProviderField(provider.key, field.key, event.target.value)}
+                      />
+                    )}
+                  </label>
+                ))}
+              </div>
+
+              <button className="run-button" type="button" onClick={() => saveProviderSettings(provider.key)} disabled={savingProvider === provider.key}>
+                <CheckIcon />
+                {savingProvider === provider.key ? 'Saving...' : `Save ${provider.label}`}
+              </button>
+            </article>
+          ))}
 
         <article className="module-card">
           <h3>API routes online</h3>

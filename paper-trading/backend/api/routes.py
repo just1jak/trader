@@ -7,6 +7,7 @@ from utils.backtest import run_backtest
 from utils.backtest_data import candles_to_records, load_sample_candles
 from utils.etrade import ETradeClient, ETradeConfigError
 from utils.options_backtest import run_long_option_backtest
+from utils.provider_config import apply_to_flask_config, provider_status, save_provider_settings
 from utils.tradovate import TradovateClient
 
 
@@ -44,6 +45,10 @@ options_backtest_input = api.model('OptionsBacktestInput', {
     'multiplier': fields.Integer(required=False, description='Contract multiplier', default=100),
 })
 
+provider_settings_input = api.model('ProviderSettingsInput', {
+    'values': fields.Raw(required=True, description='Provider environment key/value settings'),
+})
+
 
 @api.route('/health')
 class HealthResource(Resource):
@@ -55,8 +60,8 @@ class HealthResource(Resource):
             'live_trading_enabled': False,
             'sources': {
                 'sample': True,
-                'tradovate': bool(current_app.config.get('TRADOVATE_API_KEY')),
-                'etrade_market_data': bool(current_app.config.get('ETRADE_CONSUMER_KEY')),
+                'tradovate': _provider_configured('tradovate'),
+                'etrade_market_data': _provider_configured('etrade'),
             },
             'routes': {
                 'backtest': '/api/v1/backtest',
@@ -67,6 +72,27 @@ class HealthResource(Resource):
                 'options_backtest': '/api/v1/options/backtest',
             },
         }, 200
+
+
+@api.route('/settings/providers')
+class ProviderSettingsCollectionResource(Resource):
+    @api.response(200, 'Success')
+    def get(self):
+        return {'providers': provider_status()}, 200
+
+
+@api.route('/settings/providers/<string:provider_key>')
+class ProviderSettingsResource(Resource):
+    @api.expect(provider_settings_input)
+    @api.response(200, 'Saved')
+    @api.response(400, 'Validation Error')
+    def post(self, provider_key):
+        try:
+            providers = save_provider_settings(provider_key, (api.payload or {}).get('values') or {})
+            apply_to_flask_config(current_app)
+            return {'providers': providers}, 200
+        except ValueError as exc:
+            return {'error': str(exc)}, 400
 
 
 @api.route('/strategies')
@@ -258,6 +284,11 @@ def _to_bool(value, default=False):
     if value is None:
         return default
     return str(value).lower() in {'1', 'true', 'yes', 'y'}
+
+
+def _provider_configured(provider_key):
+    providers = {provider['key']: provider for provider in provider_status()}
+    return bool(providers.get(provider_key, {}).get('configured'))
 
 
 def _json_ready(value):

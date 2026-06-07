@@ -3,10 +3,12 @@ from flask_restx import Api
 import os
 from config import Config
 from api.routes import api as api_blueprint
+from utils.provider_config import apply_to_flask_config
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+    apply_to_flask_config(app)
 
     @app.after_request
     def add_cors_headers(response):
