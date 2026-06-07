@@ -42,6 +42,26 @@ ETRADE_ACCESS_TOKEN_SECRET=...
 
 Routes:
 
+- `POST /etrade/oauth/start`
+  - Requests an E*TRADE OAuth request token and returns an authorization URL.
+
+- `POST /etrade/oauth/complete`
+  - Body shape: `{ "verifier": "..." }`.
+  - Exchanges the verifier code for an access token and access token secret, then saves them server-side.
+
+- `POST /etrade/oauth/renew`
+  - Renews the access token when E*TRADE accepts renewal.
+
+- `GET /etrade/live/quote?symbols=AAPL,SPY&detailFlag=ALL`
+  - Fetches a live read-only quote snapshot.
+
+- `POST /etrade/live/collect`
+  - Body shape: `{ "symbols": "AAPL,SPY", "detailFlag": "ALL" }`.
+  - Fetches and stores one quote snapshot in `data/market_data.sqlite`.
+
+- `GET /etrade/live/snapshots`
+  - Lists saved quote snapshot metadata.
+
 - `GET /market/quote/{symbols}`
   - Calls E*TRADE quote data for one or more comma-separated equity or option symbols.
   - Optional query: `detailFlag=ALL|FUNDAMENTAL|INTRADAY|OPTIONS|WEEK_52|MF_DETAIL`.
@@ -57,7 +77,18 @@ Routes:
 ## Options Simulation
 
 - `POST /options/backtest`
-  - Simulation-only long call/put payoff proxy using underlying OHLCV.
+  - Simulation-only options payoff proxy using underlying OHLCV.
   - Required fields: `symbol`, `from`, `to`, `option_type`, `strike`, `premium`.
-  - Optional fields: `timeframe`, `source`, `contracts`, `multiplier`.
+  - Optional fields: `timeframe`, `source`, `contracts`, `multiplier`, `strategy`, `short_strike`, `short_premium`.
+  - Supported strategies: `long_call`, `long_put`, `bull_call_spread`, `bear_put_spread`, `long_straddle`.
   - This does not model historical option bid/ask, implied volatility, theta decay, early exercise, assignment, liquidity, or slippage.
+
+## Congressional Replay
+
+- `GET /congress/trades`
+  - Lists locally stored House/Senate disclosure rows from `congressional-trading/congress_trades.db`.
+
+- `POST /congress/backtest`
+  - Body shape: `{ "holding_days": 5 }`.
+  - Replays locally stored disclosures against deterministic futures proxies.
+  - Returns zero-trade metrics when the SQLite disclosure tables are empty.

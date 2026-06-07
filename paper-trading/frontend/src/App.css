@@ -665,6 +665,10 @@ button {
   padding: 18px;
 }
 
+.module-card.is-wide {
+  grid-column: 1 / -1;
+}
+
 .module-card h3 {
   margin: 0;
   color: #ffffff;
@@ -723,6 +727,33 @@ button {
 .provider-fields {
   display: grid;
   gap: 12px;
+}
+
+.module-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.live-json {
+  max-height: 260px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: #c8d6cc;
+  background: #050b10;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
 }
 
 .provider-field {
@@ -1504,6 +1535,10 @@ tbody tr.is-selected {
   .metric-strip {
     grid-template-columns: repeat(4, minmax(140px, 1fr));
   }
+
+  .module-form-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 860px) {
@@ -1584,6 +1619,15 @@ tbody tr.is-selected {
 
   .metric-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .module-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .action-row .run-button,
+  .action-row .reset-button {
+    width: 100%;
   }
 
   .panel-header,

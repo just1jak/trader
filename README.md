@@ -26,7 +26,9 @@ workflows. Live order execution is intentionally not wired here.
 - Local OHLCV sample data for credential-free backtests
 - Tradovate historical futures data path
 - Read-only E*TRADE quote and options-chain API layer
-- Simulation-only options payoff backtester
+- E*TRADE OAuth connect flow and snapshot collection store
+- Simulation-only options strategy payoff backtester
+- Congressional disclosure replay endpoint
 
 ## Key Files
 
@@ -71,7 +73,36 @@ ETRADE_ACCESS_TOKEN=...
 ETRADE_ACCESS_TOKEN_SECRET=...
 ```
 
+Access tokens are created through the dashboard `Live Data` tab:
+
+1. Save `ETRADE_CONSUMER_KEY` and `ETRADE_CONSUMER_SECRET` in `Settings`.
+2. Open `Live Data`.
+3. Click `Connect E*TRADE`.
+4. Approve the app on E*TRADE and paste the verifier code back into the app.
+5. Click `Save token`.
+
+The app can then fetch live quote snapshots and save them into `paper-trading/data/market_data.sqlite`.
+
 Routes:
+
+- `POST /api/v1/etrade/oauth/start`
+  - Requests a temporary E*TRADE OAuth token and returns the authorization URL.
+
+- `POST /api/v1/etrade/oauth/complete`
+  - Exchanges the verifier code for the access token and access token secret.
+
+- `POST /api/v1/etrade/oauth/renew`
+  - Renews the access token when E*TRADE allows renewal.
+
+- `GET /api/v1/etrade/live/quote`
+  - Fetches a read-only live quote snapshot.
+  - Query params: `symbols`, `detailFlag`.
+
+- `POST /api/v1/etrade/live/collect`
+  - Fetches and stores a quote snapshot in local SQLite.
+
+- `GET /api/v1/etrade/live/snapshots`
+  - Lists stored E*TRADE snapshot metadata.
 
 - `GET /api/v1/market/quote/{symbols}`
   - Calls E*TRADE quote data for one or more comma-separated equity or option symbols.
@@ -88,10 +119,20 @@ Routes:
 ### Options Simulation
 
 - `POST /api/v1/options/backtest`
-  - Simulation-only long call/put payoff proxy using underlying OHLCV.
+  - Simulation-only options payoff proxy using underlying OHLCV.
   - Required fields: `symbol`, `from`, `to`, `option_type`, `strike`, `premium`.
-  - Optional fields: `timeframe`, `source`, `contracts`, `multiplier`.
+  - Optional fields: `timeframe`, `source`, `contracts`, `multiplier`, `strategy`, `short_strike`, `short_premium`.
+  - Supported strategies: `long_call`, `long_put`, `bull_call_spread`, `bear_put_spread`, `long_straddle`.
   - Does not model historical option bid/ask, implied volatility, theta decay, early exercise, assignment, liquidity, or slippage.
+
+### Congressional Replay
+
+- `GET /api/v1/congress/trades`
+  - Lists locally stored House/Senate disclosures from `congressional-trading/congress_trades.db`.
+
+- `POST /api/v1/congress/backtest`
+  - Runs the congressional disclosure replay against deterministic futures proxies.
+  - Required data caveat: the checked database exists, but it must contain scraped disclosure rows before the replay can produce trades.
 
 ## Frontend Wiring
 
@@ -106,6 +147,12 @@ The dashboard also includes a `Settings` module for broker and market-data crede
 - Tradovate stores historical futures data credentials used by backtests.
 - Polygon is reserved as a stored provider slot, but it is not used by backtests yet.
 - Secret fields are masked when read back by the browser. Leaving a saved secret field blank keeps the existing value.
+
+Additional dashboard modules:
+
+- `Live Data` — E*TRADE OAuth connect, quote fetch, quote collection, and saved snapshot list.
+- `Options` — simulation-only options payoff strategy replay.
+- `Congress` — local congressional disclosure replay and stored disclosure preview.
 
 The Vite dev server proxies `/api` to `http://localhost:5001`, and the frontend also defaults to `http://localhost:5001` during dev when `VITE_BACKEND_URL` is not set. If macOS has another service on port `5000`, use the alternate backend port path:
 

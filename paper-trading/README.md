@@ -7,6 +7,9 @@ A Flask + React application for backtesting and paper trading futures strategies
 - Historical data fetch from Tradovate (configurable)
 - Read-only E*TRADE quote and options-chain API layer
 - Settings page for E*TRADE, Tradovate, and reserved Polygon provider credentials
+- Live Data page for E*TRADE OAuth connect, live quote fetch, and snapshot collection
+- Options page for long call/put, spread, and straddle payoff simulations
+- Congress page for local congressional disclosure replay
 - React UI for configuring and visualizing backtests
 - Dockerized for easy deployment
 
@@ -43,6 +46,12 @@ Supported settings today:
 - Polygon API key storage only; Polygon is not wired into backtests yet.
 
 Docker compose mounts `.env` into the backend container so Settings changes persist across rebuilds.
+
+## Live Data And Strategy Modules
+
+- `Live Data`: save E*TRADE consumer credentials in `Settings`, click `Connect E*TRADE`, paste the verifier code, then fetch or collect quote snapshots. Collected snapshots are stored in `data/market_data.sqlite`.
+- `Options`: runs simulation-only payoff replays for long calls, long puts, bull call spreads, bear put spreads, and long straddles against sample or Tradovate underlying candles.
+- `Congress`: reads `../congressional-trading/congress_trades.db` and replays stored disclosures. The checked database currently needs scraper-populated rows before results will be meaningful.
 
 ## Development
 - Backend: Python 3.12, Flask

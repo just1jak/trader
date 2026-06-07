@@ -85,6 +85,59 @@ type ProviderSettings = {
   fields: ProviderField[];
 };
 
+type LiveSnapshot = {
+  id: number;
+  captured_at: string;
+  snapshot_type: string;
+  symbol: string;
+  request: Record<string, string>;
+};
+
+type LiveQuoteResult = {
+  symbols: string;
+  detailFlag: string;
+  data: unknown;
+};
+
+type OptionsForm = {
+  symbol: string;
+  from: string;
+  to: string;
+  source: 'sample' | 'tradovate';
+  timeframe: string;
+  strategy: 'long_call' | 'long_put' | 'bull_call_spread' | 'bear_put_spread' | 'long_straddle';
+  option_type: 'CALL' | 'PUT';
+  strike: string;
+  premium: string;
+  short_strike: string;
+  short_premium: string;
+  contracts: string;
+  multiplier: string;
+};
+
+type OptionsResult = {
+  metrics: Record<string, number>;
+  trades: Array<Record<string, unknown>>;
+  assumptions: string[];
+  data_source: string;
+};
+
+type CongressTrade = {
+  chamber: string;
+  transaction_date: string;
+  member: string;
+  ticker: string;
+  transaction_type: string;
+  amount: string;
+};
+
+type CongressResult = {
+  metrics: Record<string, number>;
+  trade_details: Array<Record<string, unknown>>;
+  holding_days: number;
+  message: string;
+};
+
 const strategyOptions: Array<{
   key: StrategyKey;
   label: string;
@@ -292,6 +345,9 @@ const sampleResults: BacktestResults = {
 
 const navItems = [
   { label: 'Backtest', icon: <TrendIcon /> },
+  { label: 'Live Data', icon: <ChartIcon /> },
+  { label: 'Options', icon: <GridIcon /> },
+  { label: 'Congress', icon: <DocumentIcon /> },
   { label: 'Strategies', icon: <GridIcon /> },
   { label: 'Results', icon: <ClockIcon /> },
   { label: 'Exports', icon: <DownloadIcon /> },
@@ -320,6 +376,30 @@ function App() {
   const [providerSettings, setProviderSettings] = useState<ProviderSettings[]>([]);
   const [providerForms, setProviderForms] = useState<Record<string, Record<string, string>>>({});
   const [savingProvider, setSavingProvider] = useState<string | null>(null);
+  const [liveSymbols, setLiveSymbols] = useState('AAPL,SPY');
+  const [liveQuote, setLiveQuote] = useState<LiveQuoteResult | null>(null);
+  const [liveSnapshots, setLiveSnapshots] = useState<LiveSnapshot[]>([]);
+  const [oauthVerifier, setOauthVerifier] = useState('');
+  const [oauthMessage, setOauthMessage] = useState('Start OAuth after saving your E*TRADE consumer key and secret.');
+  const [optionForm, setOptionForm] = useState<OptionsForm>({
+    symbol: 'ES',
+    from: '2025-01-02',
+    to: '2025-01-02',
+    source: 'sample',
+    timeframe: '1min',
+    strategy: 'long_call',
+    option_type: 'CALL',
+    strike: '5300',
+    premium: '12.50',
+    short_strike: '5350',
+    short_premium: '4.00',
+    contracts: '1',
+    multiplier: '100',
+  });
+  const [optionResults, setOptionResults] = useState<OptionsResult | null>(null);
+  const [congressHoldingDays, setCongressHoldingDays] = useState('5');
+  const [congressTrades, setCongressTrades] = useState<CongressTrade[]>([]);
+  const [congressResult, setCongressResult] = useState<CongressResult | null>(null);
   const [chartRange, setChartRange] = useState('All');
   const [tradeFilter, setTradeFilter] = useState<TradeFilter>('all');
   const [lastAction, setLastAction] = useState('Waiting for first backend run');
@@ -345,6 +425,8 @@ function App() {
         callApi<ApiHealth>('/api/v1/health'),
         callApi<{ strategies: Array<{ key: string; label: string }> }>('/api/v1/strategies'),
         loadProviderSettings(),
+        loadLiveSnapshots(),
+        loadCongressTrades(),
       ]);
       if (health) setApiHealth(health);
       if (strategies?.strategies) setBackendStrategies(strategies.strategies);
@@ -497,6 +579,100 @@ function App() {
     setSavingProvider(null);
   };
 
+  const startEtradeOAuth = async () => {
+    const data = await callApi<{ authorize_url: string; message: string }>('/api/v1/etrade/oauth/start', {
+      method: 'POST',
+    });
+    if (data?.authorize_url) {
+      setOauthMessage(data.message);
+      window.open(data.authorize_url, '_blank', 'noopener,noreferrer');
+    }
+  };
+
+  const completeEtradeOAuth = async () => {
+    const data = await callApi<{ providers: ProviderSettings[]; message: string }>('/api/v1/etrade/oauth/complete', {
+      method: 'POST',
+      body: JSON.stringify({ verifier: oauthVerifier.trim() }),
+    });
+    if (data?.providers) {
+      setProviderSettings(data.providers);
+      setOauthVerifier('');
+      setOauthMessage(data.message);
+      const health = await callApi<ApiHealth>('/api/v1/health');
+      if (health) setApiHealth(health);
+    }
+  };
+
+  const renewEtradeToken = async () => {
+    const data = await callApi<{ message: string }>('/api/v1/etrade/oauth/renew', { method: 'POST' });
+    if (data?.message) setOauthMessage(data.message);
+  };
+
+  const fetchLiveQuote = async () => {
+    const params = new URLSearchParams({ symbols: liveSymbols, detailFlag: 'ALL' });
+    const data = await callApi<LiveQuoteResult>(`/api/v1/etrade/live/quote?${params.toString()}`);
+    if (data) {
+      setLiveQuote(data);
+      setLastAction(`Loaded live E*TRADE quote for ${data.symbols}`);
+    }
+  };
+
+  const collectLiveQuote = async () => {
+    const data = await callApi<{ data: unknown; snapshots: LiveSnapshot[] }>('/api/v1/etrade/live/collect', {
+      method: 'POST',
+      body: JSON.stringify({ symbols: liveSymbols, detailFlag: 'ALL' }),
+    });
+    if (data) {
+      setLiveQuote({ symbols: liveSymbols, detailFlag: 'ALL', data: data.data });
+      setLiveSnapshots(data.snapshots ?? []);
+      setLastAction(`Collected E*TRADE quote snapshot for ${liveSymbols}`);
+    }
+  };
+
+  const loadLiveSnapshots = async () => {
+    const data = await callApi<{ snapshots: LiveSnapshot[] }>('/api/v1/etrade/live/snapshots');
+    if (data?.snapshots) setLiveSnapshots(data.snapshots);
+    return data;
+  };
+
+  const updateOptionField = (field: keyof OptionsForm, value: string) => {
+    setOptionForm((previous) => {
+      const next = { ...previous, [field]: value };
+      if (field === 'strategy') {
+        next.option_type = value.includes('put') ? 'PUT' : 'CALL';
+      }
+      return next;
+    });
+  };
+
+  const runOptionsBacktest = async () => {
+    const data = await callApi<OptionsResult>('/api/v1/options/backtest', {
+      method: 'POST',
+      body: JSON.stringify(optionForm),
+    });
+    if (data?.metrics) {
+      setOptionResults(data);
+      setLastAction(`Options ${optionForm.strategy.replace(/_/g, ' ')} replay complete`);
+    }
+  };
+
+  const loadCongressTrades = async () => {
+    const data = await callApi<{ trades: CongressTrade[] }>('/api/v1/congress/trades?limit=25');
+    if (data?.trades) setCongressTrades(data.trades);
+    return data;
+  };
+
+  const runCongressBacktest = async () => {
+    const data = await callApi<CongressResult>('/api/v1/congress/backtest', {
+      method: 'POST',
+      body: JSON.stringify({ holding_days: Number(congressHoldingDays) }),
+    });
+    if (data?.metrics) {
+      setCongressResult(data);
+      setLastAction(`Congressional disclosure replay checked ${data.metrics.total_trades ?? 0} trades`);
+    }
+  };
+
   return (
     <div className="app-shell">
       <aside className="side-rail" aria-label="Primary navigation">
@@ -557,12 +733,33 @@ function App() {
             activeNav={activeNav}
             apiHealth={apiHealth}
             backendStrategies={backendStrategies}
+            collectLiveQuote={collectLiveQuote}
+            completeEtradeOAuth={completeEtradeOAuth}
+            congressHoldingDays={congressHoldingDays}
+            congressResult={congressResult}
+            congressTrades={congressTrades}
             exportTradesCsv={exportTradesCsv}
+            fetchLiveQuote={fetchLiveQuote}
+            liveQuote={liveQuote}
+            liveSnapshots={liveSnapshots}
+            liveSymbols={liveSymbols}
+            oauthMessage={oauthMessage}
+            oauthVerifier={oauthVerifier}
+            optionForm={optionForm}
+            optionResults={optionResults}
             providerForms={providerForms}
             providerSettings={providerSettings}
+            renewEtradeToken={renewEtradeToken}
             results={results}
+            runCongressBacktest={runCongressBacktest}
+            runOptionsBacktest={runOptionsBacktest}
             saveProviderSettings={saveProviderSettings}
             savingProvider={savingProvider}
+            setCongressHoldingDays={setCongressHoldingDays}
+            setLiveSymbols={setLiveSymbols}
+            setOauthVerifier={setOauthVerifier}
+            startEtradeOAuth={startEtradeOAuth}
+            updateOptionField={updateOptionField}
             updateProviderField={updateProviderField}
           />
         ) : (
@@ -723,23 +920,65 @@ function ModulePanel({
   activeNav,
   apiHealth,
   backendStrategies,
+  collectLiveQuote,
+  completeEtradeOAuth,
+  congressHoldingDays,
+  congressResult,
+  congressTrades,
   exportTradesCsv,
+  fetchLiveQuote,
+  liveQuote,
+  liveSnapshots,
+  liveSymbols,
+  oauthMessage,
+  oauthVerifier,
+  optionForm,
+  optionResults,
   providerForms,
   providerSettings,
+  renewEtradeToken,
   results,
+  runCongressBacktest,
+  runOptionsBacktest,
   saveProviderSettings,
   savingProvider,
+  setCongressHoldingDays,
+  setLiveSymbols,
+  setOauthVerifier,
+  startEtradeOAuth,
+  updateOptionField,
   updateProviderField,
 }: {
   activeNav: string;
   apiHealth: ApiHealth | null;
   backendStrategies: Array<{ key: string; label: string }>;
+  collectLiveQuote: () => void;
+  completeEtradeOAuth: () => void;
+  congressHoldingDays: string;
+  congressResult: CongressResult | null;
+  congressTrades: CongressTrade[];
   exportTradesCsv: () => void;
+  fetchLiveQuote: () => void;
+  liveQuote: LiveQuoteResult | null;
+  liveSnapshots: LiveSnapshot[];
+  liveSymbols: string;
+  oauthMessage: string;
+  oauthVerifier: string;
+  optionForm: OptionsForm;
+  optionResults: OptionsResult | null;
   providerForms: Record<string, Record<string, string>>;
   providerSettings: ProviderSettings[];
+  renewEtradeToken: () => void;
   results: BacktestResults;
+  runCongressBacktest: () => void;
+  runOptionsBacktest: () => void;
   saveProviderSettings: (providerKey: string) => void;
   savingProvider: string | null;
+  setCongressHoldingDays: (value: string) => void;
+  setLiveSymbols: (value: string) => void;
+  setOauthVerifier: (value: string) => void;
+  startEtradeOAuth: () => void;
+  updateOptionField: (field: keyof OptionsForm, value: string) => void;
   updateProviderField: (providerKey: string, fieldKey: string, value: string) => void;
 }) {
   const routeEntries = apiHealth ? Object.entries(apiHealth.routes) : [];
@@ -758,6 +997,227 @@ function ModulePanel({
       </div>
 
       <div className="module-grid">
+        {activeNav === 'Live Data' && (
+          <>
+            <article className="module-card is-wide">
+              <div className="provider-card-header">
+                <div>
+                  <h3>E*TRADE OAuth connect</h3>
+                  <p>{oauthMessage}</p>
+                </div>
+                <strong className={apiHealth?.sources?.etrade_market_data ? 'module-status-ok' : 'module-status-warn'}>
+                  {apiHealth?.sources?.etrade_market_data ? 'Token ready' : 'Needs token'}
+                </strong>
+              </div>
+              <div className="module-form-grid">
+                <label className="provider-field">
+                  <span>Verifier code</span>
+                  <input
+                    placeholder="Paste verifier after approving E*TRADE"
+                    value={oauthVerifier}
+                    onChange={(event) => setOauthVerifier(event.target.value)}
+                  />
+                </label>
+              </div>
+              <div className="action-row">
+                <button className="run-button" type="button" onClick={startEtradeOAuth}>
+                  <PlayIcon />
+                  Connect E*TRADE
+                </button>
+                <button className="reset-button" type="button" onClick={completeEtradeOAuth}>
+                  <CheckIcon />
+                  Save token
+                </button>
+                <button className="reset-button" type="button" onClick={renewEtradeToken}>
+                  <ResetIcon />
+                  Renew
+                </button>
+              </div>
+            </article>
+
+            <article className="module-card">
+              <h3>Live quote</h3>
+              <label className="provider-field">
+                <span>Symbols</span>
+                <input value={liveSymbols} onChange={(event) => setLiveSymbols(event.target.value)} />
+              </label>
+              <div className="action-row">
+                <button className="run-button" type="button" onClick={fetchLiveQuote}>
+                  <ChartIcon />
+                  Fetch quote
+                </button>
+                <button className="reset-button" type="button" onClick={collectLiveQuote}>
+                  <DownloadIcon />
+                  Collect
+                </button>
+              </div>
+              <pre className="live-json">{liveQuote ? summarizePayload(liveQuote.data) : 'No live quote loaded yet.'}</pre>
+            </article>
+
+            <article className="module-card">
+              <h3>Saved snapshots</h3>
+              <ul>
+                {liveSnapshots.length ? (
+                  liveSnapshots.map((snapshot) => (
+                    <li key={snapshot.id}>
+                      <span>{snapshot.symbol}</span>
+                      <strong>{snapshot.snapshot_type} at {snapshot.captured_at}</strong>
+                    </li>
+                  ))
+                ) : (
+                  <li>
+                    <span>No snapshots</span>
+                    <strong>Collect a quote to start the database</strong>
+                  </li>
+                )}
+              </ul>
+            </article>
+          </>
+        )}
+
+        {activeNav === 'Options' && (
+          <>
+            <article className="module-card is-wide">
+              <h3>Options strategy replay</h3>
+              <div className="module-form-grid">
+                <label className="provider-field">
+                  <span>Symbol</span>
+                  <input value={optionForm.symbol} onChange={(event) => updateOptionField('symbol', event.target.value)} />
+                </label>
+                <label className="provider-field">
+                  <span>Strategy</span>
+                  <select value={optionForm.strategy} onChange={(event) => updateOptionField('strategy', event.target.value)}>
+                    <option value="long_call">Long call</option>
+                    <option value="long_put">Long put</option>
+                    <option value="bull_call_spread">Bull call spread</option>
+                    <option value="bear_put_spread">Bear put spread</option>
+                    <option value="long_straddle">Long straddle</option>
+                  </select>
+                </label>
+                <label className="provider-field">
+                  <span>From</span>
+                  <input type="date" value={optionForm.from} onChange={(event) => updateOptionField('from', event.target.value)} />
+                </label>
+                <label className="provider-field">
+                  <span>To</span>
+                  <input type="date" value={optionForm.to} onChange={(event) => updateOptionField('to', event.target.value)} />
+                </label>
+                <label className="provider-field">
+                  <span>Data source</span>
+                  <select value={optionForm.source} onChange={(event) => updateOptionField('source', event.target.value)}>
+                    <option value="sample">Sample CSV</option>
+                    <option value="tradovate">Tradovate</option>
+                  </select>
+                </label>
+                <label className="provider-field">
+                  <span>Strike</span>
+                  <input value={optionForm.strike} onChange={(event) => updateOptionField('strike', event.target.value)} />
+                </label>
+                <label className="provider-field">
+                  <span>Premium / debit</span>
+                  <input value={optionForm.premium} onChange={(event) => updateOptionField('premium', event.target.value)} />
+                </label>
+                <label className="provider-field">
+                  <span>Short strike</span>
+                  <input value={optionForm.short_strike} onChange={(event) => updateOptionField('short_strike', event.target.value)} />
+                </label>
+                <label className="provider-field">
+                  <span>Short premium</span>
+                  <input value={optionForm.short_premium} onChange={(event) => updateOptionField('short_premium', event.target.value)} />
+                </label>
+                <label className="provider-field">
+                  <span>Contracts</span>
+                  <input value={optionForm.contracts} onChange={(event) => updateOptionField('contracts', event.target.value)} />
+                </label>
+              </div>
+              <button className="run-button" type="button" onClick={runOptionsBacktest}>
+                <PlayIcon />
+                Run options replay
+              </button>
+            </article>
+
+            <article className="module-card">
+              <h3>Options result</h3>
+              {optionResults ? (
+                <ul>
+                  <li><span>Total return</span><strong>{toPercent(optionResults.metrics.total_return)}</strong></li>
+                  <li><span>Net profit</span><strong>{formatCurrency(optionResults.metrics.net_profit ?? 0)}</strong></li>
+                  <li><span>Win rate</span><strong>{toPercent(optionResults.metrics.win_rate)}</strong></li>
+                  <li><span>Entry cost</span><strong>{formatCurrency(optionResults.metrics.entry_cost ?? 0)}</strong></li>
+                </ul>
+              ) : (
+                <p>Run a strategy replay to see the payoff proxy and assumptions.</p>
+              )}
+            </article>
+
+            <article className="module-card">
+              <h3>Model assumptions</h3>
+              <ul>
+                {(optionResults?.assumptions ?? [
+                  'Uses underlying OHLCV close values.',
+                  'No historical option bid/ask, IV, theta decay, assignment, liquidity, or slippage.',
+                  'Still simulation-only; no orders are placed.',
+                ]).map((assumption) => (
+                  <li key={assumption}>
+                    <span>{assumption}</span>
+                    <strong>simulation</strong>
+                  </li>
+                ))}
+              </ul>
+            </article>
+          </>
+        )}
+
+        {activeNav === 'Congress' && (
+          <>
+            <article className="module-card">
+              <h3>Congressional disclosure replay</h3>
+              <label className="provider-field">
+                <span>Holding days</span>
+                <input value={congressHoldingDays} onChange={(event) => setCongressHoldingDays(event.target.value)} />
+              </label>
+              <button className="run-button" type="button" onClick={runCongressBacktest}>
+                <PlayIcon />
+                Run congress replay
+              </button>
+              <p>{congressResult?.message ?? 'Uses House/Senate disclosures from the local SQLite database.'}</p>
+            </article>
+
+            <article className="module-card">
+              <h3>Congress metrics</h3>
+              {congressResult ? (
+                <ul>
+                  <li><span>Total trades</span><strong>{String(congressResult.metrics.total_trades ?? 0)}</strong></li>
+                  <li><span>Total return</span><strong>{toPercent(congressResult.metrics.total_return)}</strong></li>
+                  <li><span>Average return</span><strong>{toPercent(congressResult.metrics.average_return)}</strong></li>
+                  <li><span>Win rate</span><strong>{toPercent(congressResult.metrics.win_rate)}</strong></li>
+                </ul>
+              ) : (
+                <p>No congressional replay has been run in this session yet.</p>
+              )}
+            </article>
+
+            <article className="module-card is-wide">
+              <h3>Stored disclosures</h3>
+              <ul>
+                {congressTrades.length ? (
+                  congressTrades.slice(0, 10).map((trade) => (
+                    <li key={`${trade.chamber}-${trade.member}-${trade.ticker}-${trade.transaction_date}`}>
+                      <span>{trade.transaction_date} · {trade.member} · {trade.ticker}</span>
+                      <strong>{trade.chamber} {trade.transaction_type} {trade.amount}</strong>
+                    </li>
+                  ))
+                ) : (
+                  <li>
+                    <span>No stored disclosures</span>
+                    <strong>Run scrapers before backtesting</strong>
+                  </li>
+                )}
+              </ul>
+            </article>
+          </>
+        )}
+
         {activeNav === 'Strategies' && (
           <article className="module-card">
             <h3>Backend strategies</h3>
@@ -1238,6 +1698,12 @@ function normalizeApiResults(data: any): BacktestResults {
   };
 }
 
+function summarizePayload(payload: unknown) {
+  const text = JSON.stringify(payload, null, 2);
+  if (!text) return 'No payload.';
+  return text.length > 1400 ? `${text.slice(0, 1400)}\n...` : text;
+}
+
 function normalizeSeries(points: unknown, fallback: number[]) {
   if (!Array.isArray(points)) return fallback;
   const values = points.map((point: any) => Number(point.equity) * 100000).filter((value: number) => Number.isFinite(value));
@@ -1280,6 +1746,9 @@ function average(values: number[]) {
 
 function moduleTitle(activeNav: string) {
   const titles: Record<string, string> = {
+    'Live Data': 'E*TRADE live market data collection',
+    Options: 'Options strategy replay',
+    Congress: 'Congressional disclosure backtesting',
     Strategies: 'Strategy registry from the backend',
     Results: 'Last completed run',
     Exports: 'Download research artifacts',
@@ -1291,6 +1760,9 @@ function moduleTitle(activeNav: string) {
 
 function moduleDescription(activeNav: string) {
   const descriptions: Record<string, string> = {
+    'Live Data': 'Connect E*TRADE through OAuth, fetch quote snapshots, and save them into the local market-data collection store.',
+    Options: 'Replay option payoff strategies against the same underlying candle sources used by the backtest engine.',
+    Congress: 'Review locally stored congressional disclosures and replay them against deterministic futures proxies.',
     Strategies: 'The frontend reads the backend strategy registry so the available modules are no longer just decorative labels.',
     Results: 'This view reflects the latest successful backtest response currently held in app state.',
     Exports: 'CSV export is wired to the visible trades after search and win/loss filtering.',

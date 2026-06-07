@@ -5,7 +5,15 @@ import pandas as pd
 
 from utils.backtest import run_backtest
 from utils.backtest_data import candles_to_records, load_sample_candles
+from utils.congressional import list_congressional_trades, run_congressional_backtest
 from utils.etrade import ETradeClient, ETradeConfigError
+from utils.etrade_collection import (
+    clear_pending_oauth,
+    list_market_snapshots,
+    load_pending_oauth,
+    save_market_snapshot,
+    save_pending_oauth,
+)
 from utils.options_backtest import run_long_option_backtest
 from utils.provider_config import apply_to_flask_config, provider_status, save_provider_settings
 from utils.tradovate import TradovateClient
@@ -43,10 +51,26 @@ options_backtest_input = api.model('OptionsBacktestInput', {
     'premium': fields.Float(required=True, description='Entry premium per contract'),
     'contracts': fields.Integer(required=False, description='Number of contracts', default=1),
     'multiplier': fields.Integer(required=False, description='Contract multiplier', default=100),
+    'strategy': fields.String(required=False, description='long_call, long_put, bull_call_spread, bear_put_spread, or long_straddle'),
+    'short_strike': fields.Float(required=False, description='Short leg strike for spread strategies'),
+    'short_premium': fields.Float(required=False, description='Premium received for spread short leg', default=0),
 })
 
 provider_settings_input = api.model('ProviderSettingsInput', {
     'values': fields.Raw(required=True, description='Provider environment key/value settings'),
+})
+
+etrade_oauth_complete_input = api.model('ETradeOAuthCompleteInput', {
+    'verifier': fields.String(required=True, description='Verification code from E*TRADE authorization page'),
+})
+
+etrade_collect_input = api.model('ETradeCollectInput', {
+    'symbols': fields.String(required=True, description='Comma-separated symbols to quote'),
+    'detailFlag': fields.String(required=False, description='E*TRADE quote detail flag', default='ALL'),
+})
+
+congress_backtest_input = api.model('CongressBacktestInput', {
+    'holding_days': fields.Integer(required=False, description='Holding window after disclosed trade', default=5),
 })
 
 
@@ -66,10 +90,16 @@ class HealthResource(Resource):
             'routes': {
                 'backtest': '/api/v1/backtest',
                 'backtest_data': '/api/v1/market/backtest-data',
+                'etrade_oauth_start': '/api/v1/etrade/oauth/start',
+                'etrade_live_quote': '/api/v1/etrade/live/quote',
+                'etrade_collect_quote': '/api/v1/etrade/live/collect',
+                'etrade_snapshots': '/api/v1/etrade/live/snapshots',
                 'quote': '/api/v1/market/quote/{symbols}',
                 'option_expirations': '/api/v1/market/options/expirations/{symbol}',
                 'option_chain': '/api/v1/market/options/chain/{symbol}',
                 'options_backtest': '/api/v1/options/backtest',
+                'congress_trades': '/api/v1/congress/trades',
+                'congress_backtest': '/api/v1/congress/backtest',
             },
         }, 200
 
@@ -105,6 +135,116 @@ class StrategiesResource(Resource):
                 for key, label in STRATEGIES.items()
             ]
         }, 200
+
+
+@api.route('/etrade/oauth/start')
+class ETradeOAuthStartResource(Resource):
+    @api.response(200, 'Request token created')
+    @api.response(400, 'Configuration or validation error')
+    def post(self):
+        try:
+            client = ETradeClient()
+            request_token = client.request_token()
+            pending = save_pending_oauth(request_token)
+            return {
+                'authorize_url': client.authorize_url(request_token['oauth_token']),
+                'request_token': pending,
+                'message': 'Open the authorization URL, approve access, then paste the verifier code here.',
+            }, 200
+        except ETradeConfigError as exc:
+            return {'error': str(exc)}, 400
+        except Exception as exc:
+            return {'error': str(exc)}, 502
+
+
+@api.route('/etrade/oauth/complete')
+class ETradeOAuthCompleteResource(Resource):
+    @api.expect(etrade_oauth_complete_input)
+    @api.response(200, 'Access token saved')
+    @api.response(400, 'Configuration or validation error')
+    def post(self):
+        payload = api.payload or {}
+        try:
+            pending = load_pending_oauth()
+            token_payload = ETradeClient().exchange_access_token(
+                request_token=pending.get('oauth_token'),
+                request_token_secret=pending.get('oauth_token_secret'),
+                verifier=payload.get('verifier'),
+            )
+            providers = save_provider_settings('etrade', {
+                'ETRADE_ACCESS_TOKEN': token_payload['oauth_token'],
+                'ETRADE_ACCESS_TOKEN_SECRET': token_payload['oauth_token_secret'],
+            })
+            clear_pending_oauth()
+            apply_to_flask_config(current_app)
+            return {'providers': providers, 'message': 'E*TRADE access token saved. Tokens expire daily.'}, 200
+        except ETradeConfigError as exc:
+            return {'error': str(exc)}, 400
+        except Exception as exc:
+            return {'error': str(exc)}, 502
+
+
+@api.route('/etrade/oauth/renew')
+class ETradeOAuthRenewResource(Resource):
+    @api.response(200, 'Access token renewed')
+    @api.response(400, 'Configuration or validation error')
+    def post(self):
+        try:
+            return {'message': ETradeClient().renew_access_token()}, 200
+        except ETradeConfigError as exc:
+            return {'error': str(exc)}, 400
+        except Exception as exc:
+            return {'error': str(exc)}, 502
+
+
+@api.route('/etrade/live/quote')
+class ETradeLiveQuoteResource(Resource):
+    @api.response(200, 'Success')
+    @api.response(400, 'Configuration or validation error')
+    def get(self):
+        symbols = request.args.get('symbols', 'AAPL')
+        detail_flag = request.args.get('detailFlag', 'ALL')
+        try:
+            return {
+                'symbols': symbols,
+                'detailFlag': detail_flag,
+                'data': ETradeClient().get_quote(symbols, detail_flag=detail_flag),
+            }, 200
+        except ETradeConfigError as exc:
+            return {'error': str(exc)}, 400
+        except Exception as exc:
+            return {'error': str(exc)}, 502
+
+
+@api.route('/etrade/live/collect')
+class ETradeCollectQuoteResource(Resource):
+    @api.expect(etrade_collect_input)
+    @api.response(200, 'Snapshot saved')
+    @api.response(400, 'Configuration or validation error')
+    def post(self):
+        payload = api.payload or {}
+        symbols = payload.get('symbols') or 'AAPL'
+        detail_flag = payload.get('detailFlag') or 'ALL'
+        try:
+            data = ETradeClient().get_quote(symbols, detail_flag=detail_flag)
+            snapshot = save_market_snapshot(
+                snapshot_type='quote',
+                symbol=symbols,
+                request_params={'symbols': symbols, 'detailFlag': detail_flag},
+                response_payload=data,
+            )
+            return {'snapshot': snapshot, 'data': data, 'snapshots': list_market_snapshots()}, 200
+        except ETradeConfigError as exc:
+            return {'error': str(exc)}, 400
+        except Exception as exc:
+            return {'error': str(exc)}, 502
+
+
+@api.route('/etrade/live/snapshots')
+class ETradeSnapshotCollectionResource(Resource):
+    @api.response(200, 'Success')
+    def get(self):
+        return {'snapshots': list_market_snapshots(request.args.get('limit', 25))}, 200
 
 
 @api.route('/backtest')
@@ -241,6 +381,9 @@ class OptionsBacktestResource(Resource):
                 premium=float(payload['premium']),
                 contracts=int(payload.get('contracts') or 1),
                 multiplier=int(payload.get('multiplier') or 100),
+                strategy=payload.get('strategy'),
+                short_strike=float(payload['short_strike']) if payload.get('short_strike') not in (None, '') else None,
+                short_premium=float(payload.get('short_premium') or 0),
             )
             results['data_source'] = payload.get('source', 'sample')
             return _json_ready(results), 200
@@ -248,6 +391,22 @@ class OptionsBacktestResource(Resource):
             return {'error': str(exc)}, 400
         except Exception as exc:
             return {'error': str(exc)}, 500
+
+
+@api.route('/congress/trades')
+class CongressTradesResource(Resource):
+    @api.response(200, 'Success')
+    def get(self):
+        return list_congressional_trades(limit=request.args.get('limit', 50)), 200
+
+
+@api.route('/congress/backtest')
+class CongressBacktestResource(Resource):
+    @api.expect(congress_backtest_input)
+    @api.response(200, 'Success')
+    def post(self):
+        payload = api.payload or {}
+        return _json_ready(run_congressional_backtest(payload.get('holding_days', 5))), 200
 
 
 def _load_backtest_candles(payload):
