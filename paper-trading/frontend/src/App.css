@@ -410,10 +410,10 @@ button {
 }
 
 .command-stack {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
   align-items: center;
   gap: 10px;
+  min-width: max-content;
 }
 
 .run-button,
@@ -427,9 +427,11 @@ button {
   font-weight: 840;
   letter-spacing: 0.4px;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .run-button {
+  min-width: 188px;
   min-height: 46px;
   padding: 0 18px;
   color: #ffffff;
@@ -451,6 +453,7 @@ button {
 }
 
 .reset-button {
+  min-width: 132px;
   min-height: 44px;
   padding: 0 13px;
   color: #d6ded6;
@@ -461,6 +464,11 @@ button {
 .reset-button:hover {
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.24);
+}
+
+.run-button .icon,
+.reset-button .icon {
+  flex: 0 0 auto;
 }
 
 .reset-button .icon {
@@ -1482,7 +1490,6 @@ tbody tr.is-selected {
 
   .command-stack {
     grid-column: span 3;
-    grid-template-columns: minmax(0, 220px) auto;
     justify-content: start;
   }
 
@@ -1565,7 +1572,14 @@ tbody tr.is-selected {
   }
 
   .command-stack {
+    flex-direction: column;
+    min-width: 0;
     justify-content: stretch;
+  }
+
+  .command-stack .run-button,
+  .command-stack .reset-button {
+    width: 100%;
   }
 
   .metric-strip {
