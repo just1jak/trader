@@ -99,6 +99,47 @@ type LiveQuoteResult = {
   data: unknown;
 };
 
+type PaperStrategy = 'forward_long' | 'forward_short' | 'observe_only';
+
+type PaperForm = {
+  name: string;
+  symbol: string;
+  strategy: PaperStrategy;
+  quantity: string;
+  initial_cash: string;
+  mark_price: string;
+  detailFlag: string;
+};
+
+type PaperMark = {
+  id: number;
+  session_id: number;
+  captured_at: string;
+  symbol: string;
+  price: number;
+  quantity: number;
+  position: number;
+  cash: number;
+  equity: number;
+  pnl: number;
+  signal: string;
+  source_snapshot_id?: number | null;
+  price_source?: string;
+};
+
+type PaperSession = {
+  id: number;
+  created_at: string;
+  name: string;
+  symbol: string;
+  strategy: PaperStrategy;
+  quantity: number;
+  initial_cash: number;
+  status: string;
+  notes: string;
+  latest_mark?: PaperMark | null;
+};
+
 type OptionsForm = {
   symbol: string;
   from: string;
@@ -346,6 +387,7 @@ const sampleResults: BacktestResults = {
 const navItems = [
   { label: 'Backtest', icon: <TrendIcon /> },
   { label: 'Live Data', icon: <ChartIcon /> },
+  { label: 'Paper Trade', icon: <ClockIcon /> },
   { label: 'Options', icon: <GridIcon /> },
   { label: 'Congress', icon: <DocumentIcon /> },
   { label: 'Strategies', icon: <GridIcon /> },
@@ -379,6 +421,19 @@ function App() {
   const [liveSymbols, setLiveSymbols] = useState('AAPL,SPY');
   const [liveQuote, setLiveQuote] = useState<LiveQuoteResult | null>(null);
   const [liveSnapshots, setLiveSnapshots] = useState<LiveSnapshot[]>([]);
+  const [paperForm, setPaperForm] = useState<PaperForm>({
+    name: 'AAPL forward validation',
+    symbol: 'AAPL',
+    strategy: 'forward_long',
+    quantity: '1',
+    initial_cash: '100000',
+    mark_price: '',
+    detailFlag: 'ALL',
+  });
+  const [paperSessions, setPaperSessions] = useState<PaperSession[]>([]);
+  const [paperMarks, setPaperMarks] = useState<PaperMark[]>([]);
+  const [selectedPaperSessionId, setSelectedPaperSessionId] = useState<number | null>(null);
+  const [paperMessage, setPaperMessage] = useState('Create a paper session, then mark it from live quotes or a manual price.');
   const [oauthVerifier, setOauthVerifier] = useState('');
   const [oauthMessage, setOauthMessage] = useState('Start OAuth after saving your E*TRADE consumer key and secret.');
   const [optionForm, setOptionForm] = useState<OptionsForm>({
@@ -426,6 +481,7 @@ function App() {
         callApi<{ strategies: Array<{ key: string; label: string }> }>('/api/v1/strategies'),
         loadProviderSettings(),
         loadLiveSnapshots(),
+        loadPaperSessions(),
         loadCongressTrades(),
       ]);
       if (health) setApiHealth(health);
@@ -635,6 +691,93 @@ function App() {
     return data;
   };
 
+  const updatePaperField = (field: keyof PaperForm, value: string) => {
+    if (field === 'strategy') {
+      setPaperForm((previous) => ({
+        ...previous,
+        strategy: value as PaperStrategy,
+      }));
+      return;
+    }
+    setPaperForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+  };
+
+  const loadPaperSessions = async () => {
+    const data = await callApi<{ sessions: PaperSession[] }>('/api/v1/paper/sessions');
+    if (data?.sessions) {
+      setPaperSessions(data.sessions);
+      const selectedStillExists = data.sessions.some((session) => session.id === selectedPaperSessionId);
+      const nextSelectedId = selectedStillExists ? selectedPaperSessionId : data.sessions[0]?.id ?? null;
+      setSelectedPaperSessionId(nextSelectedId);
+      if (nextSelectedId) await loadPaperMarks(nextSelectedId);
+    }
+    return data;
+  };
+
+  const loadPaperMarks = async (sessionId: number) => {
+    const data = await callApi<{ marks: PaperMark[] }>(`/api/v1/paper/sessions/${sessionId}/marks`);
+    if (data?.marks) setPaperMarks(data.marks);
+    return data;
+  };
+
+  const createPaperSession = async () => {
+    const payload = {
+      name: paperForm.name,
+      symbol: paperForm.symbol,
+      strategy: paperForm.strategy,
+      quantity: Number(paperForm.quantity),
+      initial_cash: Number(paperForm.initial_cash),
+    };
+    const data = await callApi<{ session: PaperSession; sessions: PaperSession[] }>('/api/v1/paper/sessions', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data?.session) {
+      setPaperSessions(data.sessions ?? [data.session]);
+      setSelectedPaperSessionId(data.session.id);
+      setPaperMessage(`Created ${data.session.name}. Add a live or manual mark to start the forward trail.`);
+      await loadPaperMarks(data.session.id);
+      setLastAction(`Paper session created for ${data.session.symbol}`);
+    }
+  };
+
+  const selectPaperSession = async (sessionId: number) => {
+    setSelectedPaperSessionId(sessionId);
+    await loadPaperMarks(sessionId);
+  };
+
+  const markPaperSession = async (mode: 'live' | 'manual') => {
+    const sessionId = selectedPaperSessionId ?? paperSessions[0]?.id;
+    if (!sessionId) {
+      setPaperMessage('Create a paper session before marking price.');
+      return;
+    }
+
+    const payload: { session_id: number; price?: number; detailFlag: string } = {
+      session_id: sessionId,
+      detailFlag: paperForm.detailFlag,
+    };
+    if (mode === 'manual') {
+      payload.price = Number(paperForm.mark_price);
+    }
+
+    const data = await callApi<{ mark: PaperMark; marks: PaperMark[]; sessions: PaperSession[] }>('/api/v1/paper/mark', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (data?.mark) {
+      setPaperSessions(data.sessions ?? paperSessions);
+      setPaperMarks(data.marks ?? [data.mark, ...paperMarks]);
+      setPaperMessage(
+        `${data.mark.signal.replace(/_/g, ' ')} at ${formatCurrency(data.mark.price)}. Equity ${formatCurrency(data.mark.equity)}.`,
+      );
+      setLastAction(`Paper ${mode} mark saved for ${data.mark.symbol}`);
+    }
+  };
+
   const updateOptionField = (field: keyof OptionsForm, value: string) => {
     setOptionForm((previous) => {
       const next = { ...previous, [field]: value };
@@ -745,6 +888,12 @@ function App() {
             liveSymbols={liveSymbols}
             oauthMessage={oauthMessage}
             oauthVerifier={oauthVerifier}
+            paperForm={paperForm}
+            paperMarks={paperMarks}
+            paperMessage={paperMessage}
+            paperSessions={paperSessions}
+            createPaperSession={createPaperSession}
+            markPaperSession={markPaperSession}
             optionForm={optionForm}
             optionResults={optionResults}
             providerForms={providerForms}
@@ -758,8 +907,11 @@ function App() {
             setCongressHoldingDays={setCongressHoldingDays}
             setLiveSymbols={setLiveSymbols}
             setOauthVerifier={setOauthVerifier}
+            selectedPaperSessionId={selectedPaperSessionId}
+            selectPaperSession={selectPaperSession}
             startEtradeOAuth={startEtradeOAuth}
             updateOptionField={updateOptionField}
+            updatePaperField={updatePaperField}
             updateProviderField={updateProviderField}
           />
         ) : (
@@ -932,6 +1084,12 @@ function ModulePanel({
   liveSymbols,
   oauthMessage,
   oauthVerifier,
+  paperForm,
+  paperMarks,
+  paperMessage,
+  paperSessions,
+  createPaperSession,
+  markPaperSession,
   optionForm,
   optionResults,
   providerForms,
@@ -945,8 +1103,11 @@ function ModulePanel({
   setCongressHoldingDays,
   setLiveSymbols,
   setOauthVerifier,
+  selectedPaperSessionId,
+  selectPaperSession,
   startEtradeOAuth,
   updateOptionField,
+  updatePaperField,
   updateProviderField,
 }: {
   activeNav: string;
@@ -954,6 +1115,7 @@ function ModulePanel({
   backendStrategies: Array<{ key: string; label: string }>;
   collectLiveQuote: () => void;
   completeEtradeOAuth: () => void;
+  createPaperSession: () => void;
   congressHoldingDays: string;
   congressResult: CongressResult | null;
   congressTrades: CongressTrade[];
@@ -962,8 +1124,13 @@ function ModulePanel({
   liveQuote: LiveQuoteResult | null;
   liveSnapshots: LiveSnapshot[];
   liveSymbols: string;
+  markPaperSession: (mode: 'live' | 'manual') => void;
   oauthMessage: string;
   oauthVerifier: string;
+  paperForm: PaperForm;
+  paperMarks: PaperMark[];
+  paperMessage: string;
+  paperSessions: PaperSession[];
   optionForm: OptionsForm;
   optionResults: OptionsResult | null;
   providerForms: Record<string, Record<string, string>>;
@@ -977,11 +1144,15 @@ function ModulePanel({
   setCongressHoldingDays: (value: string) => void;
   setLiveSymbols: (value: string) => void;
   setOauthVerifier: (value: string) => void;
+  selectedPaperSessionId: number | null;
+  selectPaperSession: (sessionId: number) => void;
   startEtradeOAuth: () => void;
   updateOptionField: (field: keyof OptionsForm, value: string) => void;
+  updatePaperField: (field: keyof PaperForm, value: string) => void;
   updateProviderField: (providerKey: string, fieldKey: string, value: string) => void;
 }) {
   const routeEntries = apiHealth ? Object.entries(apiHealth.routes) : [];
+  const selectedPaperSession = paperSessions.find((session) => session.id === selectedPaperSessionId) ?? paperSessions[0] ?? null;
 
   return (
     <section className="module-panel">
@@ -1071,6 +1242,121 @@ function ModulePanel({
                   </li>
                 )}
               </ul>
+            </article>
+          </>
+        )}
+
+        {activeNav === 'Paper Trade' && (
+          <>
+            <article className="module-card is-wide">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Forward paper session</h3>
+                  <p>{paperMessage}</p>
+                </div>
+                <strong className="module-status-ok">Paper only</strong>
+              </div>
+              <div className="module-form-grid">
+                <label className="provider-field">
+                  <span>Name</span>
+                  <input value={paperForm.name} onChange={(event) => updatePaperField('name', event.target.value)} />
+                </label>
+                <label className="provider-field">
+                  <span>Symbol</span>
+                  <input value={paperForm.symbol} onChange={(event) => updatePaperField('symbol', event.target.value)} />
+                </label>
+                <label className="provider-field">
+                  <span>Forward model</span>
+                  <select value={paperForm.strategy} onChange={(event) => updatePaperField('strategy', event.target.value)}>
+                    <option value="forward_long">Forward long</option>
+                    <option value="forward_short">Forward short</option>
+                    <option value="observe_only">Observe only</option>
+                  </select>
+                </label>
+                <label className="provider-field">
+                  <span>Quantity</span>
+                  <input type="number" min="0.0001" step="0.0001" value={paperForm.quantity} onChange={(event) => updatePaperField('quantity', event.target.value)} />
+                </label>
+                <label className="provider-field">
+                  <span>Initial cash</span>
+                  <input type="number" min="1" value={paperForm.initial_cash} onChange={(event) => updatePaperField('initial_cash', event.target.value)} />
+                </label>
+                <label className="provider-field">
+                  <span>Manual mark price</span>
+                  <input type="number" min="0.0001" step="0.0001" placeholder="Optional test price" value={paperForm.mark_price} onChange={(event) => updatePaperField('mark_price', event.target.value)} />
+                </label>
+              </div>
+              <div className="action-row">
+                <button className="run-button" type="button" onClick={createPaperSession}>
+                  <CheckIcon />
+                  Create session
+                </button>
+                <button className="reset-button" type="button" onClick={() => markPaperSession('live')} disabled={!selectedPaperSession}>
+                  <ChartIcon />
+                  Mark live quote
+                </button>
+                <button className="reset-button" type="button" onClick={() => markPaperSession('manual')} disabled={!selectedPaperSession}>
+                  <ClockIcon />
+                  Mark manual
+                </button>
+              </div>
+            </article>
+
+            <article className="module-card">
+              <h3>Paper sessions</h3>
+              <ul className="paper-session-list">
+                {paperSessions.length ? (
+                  paperSessions.map((session) => (
+                    <li key={session.id}>
+                      <button
+                        className={`paper-session-button ${selectedPaperSession?.id === session.id ? 'is-active' : ''}`}
+                        onClick={() => selectPaperSession(session.id)}
+                        type="button"
+                      >
+                        <span>{session.name}</span>
+                        <strong>
+                          {session.symbol} · {formatPaperStrategy(session.strategy)}
+                        </strong>
+                        <em>{session.latest_mark ? `${formatCurrency(session.latest_mark.equity)} equity` : 'No marks yet'}</em>
+                      </button>
+                    </li>
+                  ))
+                ) : (
+                  <li>
+                    <span>No paper sessions</span>
+                    <strong>Create one to start forward validation</strong>
+                  </li>
+                )}
+              </ul>
+            </article>
+
+            <article className="module-card">
+              <h3>Equity marks</h3>
+              <ul>
+                {paperMarks.length ? (
+                  paperMarks.slice(0, 8).map((mark) => (
+                    <li key={mark.id}>
+                      <span>{mark.captured_at} · {mark.signal.replace(/_/g, ' ')}</span>
+                      <strong>
+                        {formatCurrency(mark.equity)} · {formatCurrency(mark.pnl)}
+                      </strong>
+                    </li>
+                  ))
+                ) : (
+                  <li>
+                    <span>No marks saved</span>
+                    <strong>Use live or manual mark</strong>
+                  </li>
+                )}
+              </ul>
+            </article>
+
+            <article className="module-card">
+              <h3>Validation role</h3>
+              <p>
+                Use this to collect a future equity trail from real quote marks after a backtest. It validates direction and mark-to-market behavior,
+                but full candle-based signal replay still needs scheduled bar aggregation.
+              </p>
             </article>
           </>
         )}
@@ -1747,6 +2033,7 @@ function average(values: number[]) {
 function moduleTitle(activeNav: string) {
   const titles: Record<string, string> = {
     'Live Data': 'E*TRADE live market data collection',
+    'Paper Trade': 'Forward paper validation',
     Options: 'Options strategy replay',
     Congress: 'Congressional disclosure backtesting',
     Strategies: 'Strategy registry from the backend',
@@ -1761,6 +2048,7 @@ function moduleTitle(activeNav: string) {
 function moduleDescription(activeNav: string) {
   const descriptions: Record<string, string> = {
     'Live Data': 'Connect E*TRADE through OAuth, fetch quote snapshots, and save them into the local market-data collection store.',
+    'Paper Trade': 'Create paper-only sessions, mark them with live E*TRADE quotes or manual prices, and compare the future equity trail against your backtest thesis.',
     Options: 'Replay option payoff strategies against the same underlying candle sources used by the backtest engine.',
     Congress: 'Review locally stored congressional disclosures and replay them against deterministic futures proxies.',
     Strategies: 'The frontend reads the backend strategy registry so the available modules are no longer just decorative labels.',
@@ -1774,6 +2062,10 @@ function moduleDescription(activeNav: string) {
 
 function formatSigned(value: number) {
   return `${value > 0 ? '+' : ''}${value.toFixed(2)}`;
+}
+
+function formatPaperStrategy(strategy: PaperStrategy) {
+  return strategy.replace(/_/g, ' ');
 }
 
 function formatCurrency(value: number) {
