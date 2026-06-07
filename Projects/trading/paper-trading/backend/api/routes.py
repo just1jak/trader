@@ -1,4 +1,4 @@
-from flask import request
+from flask import current_app, request
 from flask_restx import Namespace, Resource, fields
 import math
 import pandas as pd
@@ -11,6 +11,15 @@ from utils.tradovate import TradovateClient
 
 
 api = Namespace('trading', description='Backtesting and market-data operations')
+
+STRATEGIES = {
+    'ma_crossover': 'MA Crossover',
+    'orb': 'Opening Range Breakout',
+    'delta_scalp': 'Delta Scalp',
+    'ema_scalp': 'Micro-Trend EMA Scalp',
+    'support_resistance_flip': 'Support/Resistance Flip',
+    'volume_profile_orderflow': 'Volume Profile Order Flow',
+}
 
 backtest_input = api.model('BacktestInput', {
     'symbol': fields.String(required=True, description='Futures symbol, e.g., ES'),
@@ -34,6 +43,42 @@ options_backtest_input = api.model('OptionsBacktestInput', {
     'contracts': fields.Integer(required=False, description='Number of contracts', default=1),
     'multiplier': fields.Integer(required=False, description='Contract multiplier', default=100),
 })
+
+
+@api.route('/health')
+class HealthResource(Resource):
+    @api.response(200, 'Success')
+    def get(self):
+        return {
+            'status': 'ok',
+            'mode': 'simulation',
+            'live_trading_enabled': False,
+            'sources': {
+                'sample': True,
+                'tradovate': bool(current_app.config.get('TRADOVATE_API_KEY')),
+                'etrade_market_data': bool(current_app.config.get('ETRADE_CONSUMER_KEY')),
+            },
+            'routes': {
+                'backtest': '/api/v1/backtest',
+                'backtest_data': '/api/v1/market/backtest-data',
+                'quote': '/api/v1/market/quote/{symbols}',
+                'option_expirations': '/api/v1/market/options/expirations/{symbol}',
+                'option_chain': '/api/v1/market/options/chain/{symbol}',
+                'options_backtest': '/api/v1/options/backtest',
+            },
+        }, 200
+
+
+@api.route('/strategies')
+class StrategiesResource(Resource):
+    @api.response(200, 'Success')
+    def get(self):
+        return {
+            'strategies': [
+                {'key': key, 'label': label}
+                for key, label in STRATEGIES.items()
+            ]
+        }, 200
 
 
 @api.route('/backtest')

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useApi } from './hooks/useApi';
 import './App.css';
 
@@ -51,6 +51,23 @@ type BacktestResults = {
   dataSource: string;
   fees: string;
 };
+
+type ApiHealth = {
+  status: string;
+  mode: string;
+  live_trading_enabled: boolean;
+  sources: Record<string, boolean>;
+  routes: Record<string, string>;
+};
+
+type DataPreview = {
+  source: string;
+  symbol: string;
+  timeframe: string;
+  rows: number;
+};
+
+type TradeFilter = 'all' | 'winners' | 'losers';
 
 const strategyOptions: Array<{
   key: StrategyKey;
@@ -268,6 +285,7 @@ const navItems = [
 
 function App() {
   const { callApi, loading, error, clearError } = useApi();
+  const [activeNav, setActiveNav] = useState('Backtest');
   const [formData, setFormData] = useState<BacktestForm>({
     symbol: 'ES',
     from: '2025-01-02',
@@ -280,6 +298,12 @@ function App() {
   const [results, setResults] = useState<BacktestResults>(sampleResults);
   const [search, setSearch] = useState('');
   const [selectedTradeId, setSelectedTradeId] = useState(1);
+  const [apiHealth, setApiHealth] = useState<ApiHealth | null>(null);
+  const [backendStrategies, setBackendStrategies] = useState<Array<{ key: string; label: string }>>([]);
+  const [dataPreview, setDataPreview] = useState<DataPreview | null>(null);
+  const [chartRange, setChartRange] = useState('All');
+  const [tradeFilter, setTradeFilter] = useState<TradeFilter>('all');
+  const [lastAction, setLastAction] = useState('Waiting for first backend run');
 
   const selectedStrategy = useMemo(
     () => strategyOptions.find((strategy) => strategy.key === formData.strategy) ?? strategyOptions[0],
@@ -288,9 +312,32 @@ function App() {
 
   const filteredTrades = results.trades.filter((trade) => {
     const needle = search.trim().toLowerCase();
-    if (!needle) return true;
-    return `${trade.entryTime} ${trade.exitTime} ${trade.side} ${trade.reason}`.toLowerCase().includes(needle);
+    const matchesSearch = !needle || `${trade.entryTime} ${trade.exitTime} ${trade.side} ${trade.reason}`.toLowerCase().includes(needle);
+    const matchesFilter =
+      tradeFilter === 'all' ||
+      (tradeFilter === 'winners' && trade.pnlDollars >= 0) ||
+      (tradeFilter === 'losers' && trade.pnlDollars < 0);
+    return matchesSearch && matchesFilter;
   });
+
+  useEffect(() => {
+    const loadBackendStatus = async () => {
+      const [health, strategies] = await Promise.all([
+        callApi<ApiHealth>('/api/v1/health'),
+        callApi<{ strategies: Array<{ key: string; label: string }> }>('/api/v1/strategies'),
+      ]);
+      if (health) setApiHealth(health);
+      if (strategies?.strategies) setBackendStrategies(strategies.strategies);
+    };
+
+    loadBackendStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    refreshDataPreview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.symbol, formData.timeframe, formData.from, formData.to, formData.source]);
 
   const updateField = (field: keyof BacktestForm, value: string) => {
     if (field === 'strategy') {
@@ -329,6 +376,9 @@ function App() {
 
   const runBacktest = async () => {
     clearError();
+    setLastAction('Requesting candles from backend...');
+    await refreshDataPreview();
+    setLastAction('Running backend backtest...');
     const data = await callApi<any>('/api/v1/backtest', {
       method: 'POST',
       body: JSON.stringify(formData),
@@ -336,7 +386,62 @@ function App() {
 
     if (data?.metrics) {
       setResults(normalizeApiResults(data));
+      setLastAction(`Backtest completed from ${data.data_source ?? formData.source} data`);
     }
+  };
+
+  const refreshDataPreview = async () => {
+    if (formData.source === 'tradovate' && !apiHealth?.sources?.tradovate) {
+      setDataPreview(null);
+      setLastAction('Tradovate credentials are not configured');
+      return null;
+    }
+
+    const params = new URLSearchParams({
+      symbol: formData.symbol,
+      source: formData.source,
+      timeframe: formData.timeframe,
+      from: formData.from,
+      to: formData.to,
+    });
+    const data = await callApi<DataPreview>(`/api/v1/market/backtest-data?${params.toString()}`);
+    if (data) {
+      setDataPreview(data);
+      setLastAction(`Loaded ${data.rows} ${data.timeframe} candles from ${data.source}`);
+    }
+    return data;
+  };
+
+  const cycleTradeFilter = () => {
+    setTradeFilter((current) => (current === 'all' ? 'winners' : current === 'winners' ? 'losers' : 'all'));
+  };
+
+  const exportTradesCsv = () => {
+    const rows = [
+      ['id', 'entryTime', 'exitTime', 'side', 'entry', 'exit', 'quantity', 'pnlPoints', 'pnlDollars', 'rMultiple', 'reason'],
+      ...filteredTrades.map((trade) => [
+        trade.id,
+        trade.entryTime,
+        trade.exitTime,
+        trade.side,
+        trade.entry,
+        trade.exit,
+        trade.quantity,
+        trade.pnlPoints,
+        trade.pnlDollars,
+        trade.rMultiple,
+        trade.reason,
+      ]),
+    ];
+    const csv = rows.map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `forge-trades-${formData.symbol}-${formData.from}-to-${formData.to}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setLastAction(`Exported ${filteredTrades.length} trades to CSV`);
   };
 
   return (
@@ -352,7 +457,12 @@ function App() {
 
         <nav className="rail-nav">
           {navItems.map((item, index) => (
-            <button className={`rail-button ${index === 0 ? 'is-active' : ''}`} key={item.label} type="button">
+            <button
+              className={`rail-button ${activeNav === item.label ? 'is-active' : ''}`}
+              key={item.label}
+              onClick={() => setActiveNav(item.label)}
+              type="button"
+            >
               {item.icon}
               <span>{item.label}</span>
             </button>
@@ -368,7 +478,7 @@ function App() {
 
           <div className="rail-status">
             <span className="status-dot" />
-            <span>All systems nominal</span>
+            <span>{apiHealth?.status === 'ok' ? 'Backend connected' : 'Backend pending'}</span>
           </div>
         </div>
       </aside>
@@ -377,18 +487,28 @@ function App() {
         <header className="top-bar">
           <div className="page-title">
             <ChartIcon />
-            <h1>Backtest</h1>
+            <h1>{activeNav}</h1>
           </div>
 
           <div className="system-status" aria-label="System status">
             <span className="status-dot" />
             <strong>Simulation only</strong>
             <span className="muted-dot" />
-            <span>All systems nominal</span>
+            <span>{dataPreview ? `${dataPreview.rows} candles loaded` : lastAction}</span>
             <SunIcon />
           </div>
         </header>
 
+        {activeNav !== 'Backtest' ? (
+          <ModulePanel
+            activeNav={activeNav}
+            apiHealth={apiHealth}
+            backendStrategies={backendStrategies}
+            exportTradesCsv={exportTradesCsv}
+            results={results}
+          />
+        ) : (
+          <>
         <section className="config-panel" aria-label="Backtest configuration">
           <div className="config-grid">
             <Field label="Symbol" className="symbol-field">
@@ -497,9 +617,17 @@ function App() {
         <section className="content-grid">
           <div className="main-column">
             <MetricStrip metrics={results.metrics} />
-            <EquityPanel equity={results.equity} buyHold={results.buyHold} />
+            <EquityPanel
+              buyHold={results.buyHold}
+              chartRange={chartRange}
+              equity={results.equity}
+              setChartRange={setChartRange}
+            />
             <TradesPanel
+              exportTradesCsv={exportTradesCsv}
               filteredTrades={filteredTrades}
+              tradeFilter={tradeFilter}
+              cycleTradeFilter={cycleTradeFilter}
               search={search}
               selectedTradeId={selectedTradeId}
               setSearch={setSearch}
@@ -517,6 +645,8 @@ function App() {
             strategy={selectedStrategy}
           />
         </section>
+          </>
+        )}
       </main>
     </div>
   );
@@ -528,6 +658,105 @@ function Field({ children, className = '', label }: { children: React.ReactNode;
       <span>{label}</span>
       {children}
     </label>
+  );
+}
+
+function ModulePanel({
+  activeNav,
+  apiHealth,
+  backendStrategies,
+  exportTradesCsv,
+  results,
+}: {
+  activeNav: string;
+  apiHealth: ApiHealth | null;
+  backendStrategies: Array<{ key: string; label: string }>;
+  exportTradesCsv: () => void;
+  results: BacktestResults;
+}) {
+  const routeEntries = apiHealth ? Object.entries(apiHealth.routes) : [];
+
+  return (
+    <section className="module-panel">
+      <div className="module-hero">
+        <div>
+          <span>{activeNav}</span>
+          <h2>{moduleTitle(activeNav)}</h2>
+          <p>{moduleDescription(activeNav)}</p>
+        </div>
+        <strong className={apiHealth?.status === 'ok' ? 'module-status-ok' : 'module-status-warn'}>
+          {apiHealth?.status === 'ok' ? 'API connected' : 'API not confirmed'}
+        </strong>
+      </div>
+
+      <div className="module-grid">
+        {activeNav === 'Strategies' && (
+          <article className="module-card">
+            <h3>Backend strategies</h3>
+            <ul>
+              {(backendStrategies.length ? backendStrategies : strategyOptions).map((strategy) => (
+                <li key={strategy.key}>
+                  <span>{strategy.label}</span>
+                  <strong>{strategy.key}</strong>
+                </li>
+              ))}
+            </ul>
+          </article>
+        )}
+
+        {activeNav === 'Results' && (
+          <article className="module-card">
+            <h3>Last run summary</h3>
+            <ul>
+              {results.metrics.slice(0, 6).map((metric) => (
+                <li key={metric.label}>
+                  <span>{metric.label}</span>
+                  <strong>{metric.value}</strong>
+                </li>
+              ))}
+            </ul>
+          </article>
+        )}
+
+        {activeNav === 'Exports' && (
+          <article className="module-card">
+            <h3>Available export</h3>
+            <p>Trade CSV export is wired to the current filtered trade table.</p>
+            <button className="run-button" type="button" onClick={exportTradesCsv}>
+              <DownloadIcon />
+              Export trades
+            </button>
+          </article>
+        )}
+
+        <article className="module-card">
+          <h3>API routes online</h3>
+          <ul>
+            {routeEntries.length ? (
+              routeEntries.map(([name, route]) => (
+                <li key={name}>
+                  <span>{name.replace(/_/g, ' ')}</span>
+                  <strong>{route}</strong>
+                </li>
+              ))
+            ) : (
+              <li>
+                <span>Run backend</span>
+                <strong>Waiting for /api/v1/health</strong>
+              </li>
+            )}
+          </ul>
+        </article>
+
+        <article className="module-card">
+          <h3>Build status</h3>
+          <p>
+            This module has honest app state now. Backtest, strategy metadata, route discovery,
+            result summary, and trade export are wired; notebook/settings still need real persistence.
+          </p>
+        </article>
+      </div>
+    </section>
   );
 }
 
@@ -549,11 +778,23 @@ function MetricStrip({ metrics }: { metrics: Metric[] }) {
   );
 }
 
-function EquityPanel({ equity, buyHold }: { equity: number[]; buyHold: number[] }) {
-  const backtestPath = buildLinePath(equity, 1040, 260);
-  const buyHoldPath = buildLinePath(buyHold, 1040, 260);
-  const lastEquity = equity[equity.length - 1];
-  const lastBuyHold = buyHold[buyHold.length - 1];
+function EquityPanel({
+  buyHold,
+  chartRange,
+  equity,
+  setChartRange,
+}: {
+  buyHold: number[];
+  chartRange: string;
+  equity: number[];
+  setChartRange: (range: string) => void;
+}) {
+  const visibleEquity = sliceSeriesForRange(equity, chartRange);
+  const visibleBuyHold = sliceSeriesForRange(buyHold, chartRange);
+  const backtestPath = buildLinePath(visibleEquity, 1040, 260);
+  const buyHoldPath = buildLinePath(visibleBuyHold, 1040, 260);
+  const lastEquity = visibleEquity[visibleEquity.length - 1] ?? 0;
+  const lastBuyHold = visibleBuyHold[visibleBuyHold.length - 1] ?? 0;
 
   return (
     <section className="chart-panel">
@@ -564,7 +805,7 @@ function EquityPanel({ equity, buyHold }: { equity: number[]; buyHold: number[] 
         </div>
         <div className="chart-actions" aria-label="Chart range controls">
           {['1M', '3M', '6M', 'YTD', '1Y', 'All'].map((range) => (
-            <button className={range === 'All' ? 'is-active' : ''} key={range} type="button">
+            <button className={range === chartRange ? 'is-active' : ''} key={range} onClick={() => setChartRange(range)} type="button">
               {range}
             </button>
           ))}
@@ -623,18 +864,24 @@ function EquityPanel({ equity, buyHold }: { equity: number[]; buyHold: number[] 
 }
 
 function TradesPanel({
+  cycleTradeFilter,
+  exportTradesCsv,
   filteredTrades,
   search,
   selectedTradeId,
   setSearch,
   setSelectedTradeId,
+  tradeFilter,
   totalTrades,
 }: {
+  cycleTradeFilter: () => void;
+  exportTradesCsv: () => void;
   filteredTrades: Trade[];
   search: string;
   selectedTradeId: number;
   setSearch: (value: string) => void;
   setSelectedTradeId: (id: number) => void;
+  tradeFilter: TradeFilter;
   totalTrades: number;
 }) {
   return (
@@ -646,11 +893,11 @@ function TradesPanel({
             <SearchIcon />
             <input placeholder="Search trades..." value={search} onChange={(event) => setSearch(event.target.value)} />
           </label>
-          <button type="button">
+          <button type="button" onClick={cycleTradeFilter}>
             <FilterIcon />
-            Filters
+            {tradeFilter === 'all' ? 'All trades' : tradeFilter === 'winners' ? 'Winners' : 'Losers'}
           </button>
-          <button type="button">
+          <button type="button" onClick={exportTradesCsv}>
             <DownloadIcon />
             Export CSV
           </button>
@@ -851,6 +1098,10 @@ function normalizeApiResults(data: any): BacktestResults {
     : sampleResults.trades;
   const equity = normalizeSeries(data.equity_curve, sampleResults.equity);
   const buyHold = normalizeSeries(data.buy_hold_curve, sampleResults.buyHold);
+  const winningTrades = trades.filter((trade: Trade) => trade.pnlDollars > 0);
+  const losingTrades = trades.filter((trade: Trade) => trade.pnlDollars < 0);
+  const averageWin = average(winningTrades.map((trade: Trade) => trade.pnlDollars));
+  const averageLoss = average(losingTrades.map((trade: Trade) => trade.pnlDollars));
 
   return {
     ...sampleResults,
@@ -865,7 +1116,7 @@ function normalizeApiResults(data: any): BacktestResults {
       { label: 'Win Rate', value: toPercent(metrics.win_rate), detail: `${trades.length} trades`, tone: numberTone(metrics.win_rate) },
       { label: 'Net Profit', value: formatCurrency(Number(metrics.net_profit ?? 0)), detail: '1 contract model', tone: numberTone(metrics.net_profit) },
       { label: 'Total Trades', value: String(metrics.total_trades ?? trades.length), detail: 'Signal exits', tone: 'neutral' },
-      { label: 'Avg Win', value: sampleResults.metrics[6].value, detail: sampleResults.metrics[6].detail, tone: 'positive' },
+      { label: 'Avg Win', value: formatCurrency(averageWin), detail: `${formatCurrency(averageLoss)} avg loss`, tone: 'positive' },
     ],
     trades,
   };
@@ -891,6 +1142,46 @@ function buildLinePath(values: number[], width: number, height: number) {
       return `${index === 0 ? 'M' : 'L'} ${x.toFixed(2)} ${y.toFixed(2)}`;
     })
     .join(' ');
+}
+
+function sliceSeriesForRange(values: number[], range: string) {
+  const sizeByRange: Record<string, number> = {
+    '1M': 8,
+    '3M': 14,
+    '6M': 22,
+    YTD: 28,
+    '1Y': 34,
+    All: values.length,
+  };
+  const size = sizeByRange[range] ?? values.length;
+  return values.slice(Math.max(0, values.length - size));
+}
+
+function average(values: number[]) {
+  if (!values.length) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function moduleTitle(activeNav: string) {
+  const titles: Record<string, string> = {
+    Strategies: 'Strategy registry from the backend',
+    Results: 'Last completed run',
+    Exports: 'Download research artifacts',
+    Notebook: 'Research notebook is not persisted yet',
+    Settings: 'Server and broker configuration',
+  };
+  return titles[activeNav] ?? 'Module status';
+}
+
+function moduleDescription(activeNav: string) {
+  const descriptions: Record<string, string> = {
+    Strategies: 'The frontend reads the backend strategy registry so the available modules are no longer just decorative labels.',
+    Results: 'This view reflects the latest successful backtest response currently held in app state.',
+    Exports: 'CSV export is wired to the visible trades after search and win/loss filtering.',
+    Notebook: 'This still needs a persistence layer before notes can be saved across sessions.',
+    Settings: 'Broker credentials stay in .env on the server; the browser can only see source availability.',
+  };
+  return descriptions[activeNav] ?? 'The backtest workspace is the primary wired module right now.';
 }
 
 function formatSigned(value: number) {
