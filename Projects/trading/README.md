@@ -100,6 +100,13 @@ The React dashboard posts to `POST /api/v1/backtest` and includes a data-source 
 - `Sample CSV` — uses the local ES sample data and works without broker credentials.
 - `Tradovate` — uses the existing Tradovate historical-data client when credentials are configured.
 
+The dashboard also includes a `Settings` module for broker and market-data credentials:
+
+- E*TRADE stores read-only OAuth market-data credentials for quote, expiration, and option-chain routes.
+- Tradovate stores historical futures data credentials used by backtests.
+- Polygon is reserved as a stored provider slot, but it is not used by backtests yet.
+- Secret fields are masked when read back by the browser. Leaving a saved secret field blank keeps the existing value.
+
 The Vite dev server proxies `/api` to `http://localhost:5001`, and the frontend also defaults to `http://localhost:5001` during dev when `VITE_BACKEND_URL` is not set. If macOS has another service on port `5000`, use the alternate backend port path:
 
 ```bash

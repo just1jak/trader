@@ -701,6 +701,66 @@ button {
   word-break: break-word;
 }
 
+.provider-card {
+  grid-column: span 1;
+}
+
+.provider-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.provider-fields {
+  display: grid;
+  gap: 12px;
+}
+
+.provider-field {
+  display: grid;
+  gap: 7px;
+}
+
+.provider-field span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: #d5ded7;
+  font-size: 12px;
+  font-weight: 760;
+}
+
+.provider-field small {
+  color: #8fa098;
+  font-size: 11px;
+  font-weight: 620;
+}
+
+.provider-field input,
+.provider-field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  color: #f3f7f3;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.015)),
+    #071016;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  outline: none;
+  color-scheme: dark;
+  font-size: 13px;
+  font-weight: 620;
+}
+
+.provider-field input:focus,
+.provider-field select:focus {
+  border-color: rgba(55, 255, 107, 0.7);
+  box-shadow: 0 0 0 3px rgba(55, 255, 107, 0.12);
+}
+
 .main-column {
   display: grid;
   gap: 12px;

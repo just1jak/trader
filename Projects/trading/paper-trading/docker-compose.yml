@@ -7,9 +7,12 @@ services:
       - "5000:5000"
     env_file:
       - .env
+    environment:
+      - PROVIDER_ENV_PATH=/app/.env
     volumes:
       - ./backend:/app
       - ./data:/app/data
+      - ./.env:/app/.env
     depends_on:
       - db
 

@@ -6,6 +6,7 @@ import uuid
 from urllib.parse import quote, urlencode
 
 import requests
+from flask import current_app, has_app_context
 
 from config import Config
 
@@ -24,11 +25,11 @@ class ETradeClient:
     """
 
     def __init__(self):
-        self.base_url = Config.ETRADE_BASE_URL.rstrip('/')
-        self.consumer_key = Config.ETRADE_CONSUMER_KEY
-        self.consumer_secret = Config.ETRADE_CONSUMER_SECRET
-        self.access_token = Config.ETRADE_ACCESS_TOKEN
-        self.access_token_secret = Config.ETRADE_ACCESS_TOKEN_SECRET
+        self.base_url = _setting('ETRADE_BASE_URL', Config.ETRADE_BASE_URL).rstrip('/')
+        self.consumer_key = _setting('ETRADE_CONSUMER_KEY', Config.ETRADE_CONSUMER_KEY)
+        self.consumer_secret = _setting('ETRADE_CONSUMER_SECRET', Config.ETRADE_CONSUMER_SECRET)
+        self.access_token = _setting('ETRADE_ACCESS_TOKEN', Config.ETRADE_ACCESS_TOKEN)
+        self.access_token_secret = _setting('ETRADE_ACCESS_TOKEN_SECRET', Config.ETRADE_ACCESS_TOKEN_SECRET)
         self.session = requests.Session()
 
     @property
@@ -135,3 +136,9 @@ class ETradeClient:
         ])
         digest = hmac.new(signing_key.encode(), base_string.encode(), hashlib.sha1).digest()
         return base64.b64encode(digest).decode()
+
+
+def _setting(key, fallback=None):
+    if has_app_context():
+        return current_app.config.get(key, fallback)
+    return fallback
