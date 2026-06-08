@@ -6,6 +6,7 @@ import pandas as pd
 from utils.backtest import run_backtest
 from utils.backtest_data import candles_to_records, load_sample_candles
 from utils.congressional import list_congressional_trades, run_congressional_backtest
+from utils.congressional_ingest_bridge import sync_congressional_disclosures
 from utils.etrade import ETradeClient, ETradeConfigError
 from utils.etrade_collection import (
     clear_pending_oauth,
@@ -96,6 +97,12 @@ congress_backtest_input = api.model('CongressBacktestInput', {
     'holding_days': fields.Integer(required=False, description='Holding window after disclosed trade', default=5),
 })
 
+congress_ingest_input = api.model('CongressIngestInput', {
+    'year': fields.Integer(required=False, description='Disclosure year to import'),
+    'limit': fields.Integer(required=False, description='Maximum House PTR PDFs to download', default=25),
+    'include_senate': fields.Boolean(required=False, description='Attempt Senate ingestion if supported', default=False),
+})
+
 
 @api.route('/health')
 class HealthResource(Resource):
@@ -126,6 +133,7 @@ class HealthResource(Resource):
                 'option_chain': '/api/v1/market/options/chain/{symbol}',
                 'options_backtest': '/api/v1/options/backtest',
                 'congress_trades': '/api/v1/congress/trades',
+                'congress_ingest': '/api/v1/congress/ingest',
                 'congress_backtest': '/api/v1/congress/backtest',
             },
         }, 200
@@ -538,6 +546,31 @@ class CongressTradesResource(Resource):
     @api.response(200, 'Success')
     def get(self):
         return list_congressional_trades(limit=request.args.get('limit', 50)), 200
+
+
+@api.route('/congress/ingest')
+class CongressIngestResource(Resource):
+    @api.expect(congress_ingest_input)
+    @api.response(200, 'Disclosures synced')
+    @api.response(400, 'Validation Error')
+    @api.response(502, 'External source error')
+    def post(self):
+        payload = api.payload or {}
+        try:
+            summary = sync_congressional_disclosures(
+                year=payload.get('year'),
+                limit=payload.get('limit') or 25,
+                include_senate=bool(payload.get('include_senate')),
+            )
+            return {
+                'summary': _json_ready(summary),
+                'trades': list_congressional_trades(limit=25),
+                'message': 'Congressional disclosure sync completed from official House PTR PDFs.',
+            }, 200
+        except ValueError as exc:
+            return {'error': str(exc)}, 400
+        except Exception as exc:
+            return {'error': str(exc)}, 502
 
 
 @api.route('/congress/backtest')

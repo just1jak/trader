@@ -206,6 +206,31 @@ type CongressResult = {
   message: string;
 };
 
+type CongressIngestSummary = {
+  status: string;
+  year: number;
+  limit: number;
+  counts: {
+    house: number;
+    senate: number;
+    total: number;
+  };
+  house: {
+    status: string;
+    reports_available: number;
+    reports_downloaded: number;
+    parsed: number;
+    inserted: number;
+    errors: Array<Record<string, unknown>>;
+  };
+  senate: {
+    status: string;
+    parsed: number;
+    inserted: number;
+    errors: string[];
+  };
+};
+
 const strategyOptions: Array<{
   key: StrategyKey;
   label: string;
@@ -485,6 +510,8 @@ function App() {
   const [congressHoldingDays, setCongressHoldingDays] = useState('5');
   const [congressTrades, setCongressTrades] = useState<CongressTrade[]>([]);
   const [congressResult, setCongressResult] = useState<CongressResult | null>(null);
+  const [congressIngestResult, setCongressIngestResult] = useState<CongressIngestSummary | null>(null);
+  const [congressSyncing, setCongressSyncing] = useState(false);
   const [chartRange, setChartRange] = useState('All');
   const [tradeFilter, setTradeFilter] = useState<TradeFilter>('all');
   const [lastAction, setLastAction] = useState('Waiting for first backend run');
@@ -874,6 +901,28 @@ function App() {
     }
   };
 
+  const syncCongressTrades = async () => {
+    setCongressSyncing(true);
+    const year = new Date().getFullYear();
+    try {
+      const data = await callApi<{ summary: CongressIngestSummary; trades: { trades: CongressTrade[] }; message: string }>(
+        '/api/v1/congress/ingest',
+        {
+          method: 'POST',
+          body: JSON.stringify({ year, limit: 25, include_senate: false }),
+        },
+      );
+      if (data?.summary) {
+        setCongressIngestResult(data.summary);
+        setCongressTrades(data.trades?.trades ?? congressTrades);
+        loadSourceDiagnostics(false);
+        setLastAction(`Synced ${data.summary.counts.total} congressional disclosure rows`);
+      }
+    } finally {
+      setCongressSyncing(false);
+    }
+  };
+
   return (
     <div className="app-shell">
       <aside className="side-rail" aria-label="Primary navigation">
@@ -937,7 +986,9 @@ function App() {
             collectLiveQuote={collectLiveQuote}
             completeEtradeOAuth={completeEtradeOAuth}
             congressHoldingDays={congressHoldingDays}
+            congressIngestResult={congressIngestResult}
             congressResult={congressResult}
+            congressSyncing={congressSyncing}
             congressTrades={congressTrades}
             exportTradesCsv={exportTradesCsv}
             fetchLiveQuote={fetchLiveQuote}
@@ -959,6 +1010,7 @@ function App() {
             renewEtradeToken={renewEtradeToken}
             results={results}
             runCongressBacktest={runCongressBacktest}
+            syncCongressTrades={syncCongressTrades}
             runOptionsBacktest={runOptionsBacktest}
             saveProviderSettings={saveProviderSettings}
             savingProvider={savingProvider}
@@ -1163,7 +1215,9 @@ function ModulePanel({
   collectLiveQuote,
   completeEtradeOAuth,
   congressHoldingDays,
+  congressIngestResult,
   congressResult,
+  congressSyncing,
   congressTrades,
   exportTradesCsv,
   fetchLiveQuote,
@@ -1185,6 +1239,7 @@ function ModulePanel({
   renewEtradeToken,
   results,
   runCongressBacktest,
+  syncCongressTrades,
   runOptionsBacktest,
   saveProviderSettings,
   savingProvider,
@@ -1208,7 +1263,9 @@ function ModulePanel({
   completeEtradeOAuth: () => void;
   createPaperSession: () => void;
   congressHoldingDays: string;
+  congressIngestResult: CongressIngestSummary | null;
   congressResult: CongressResult | null;
+  congressSyncing: boolean;
   congressTrades: CongressTrade[];
   exportTradesCsv: () => void;
   fetchLiveQuote: () => void;
@@ -1229,6 +1286,7 @@ function ModulePanel({
   renewEtradeToken: () => void;
   results: BacktestResults;
   runCongressBacktest: () => void;
+  syncCongressTrades: () => void;
   runOptionsBacktest: () => void;
   saveProviderSettings: (providerKey: string) => void;
   savingProvider: string | null;
@@ -1598,6 +1656,10 @@ function ModulePanel({
           <>
             <article className="module-card">
               <h3>Congressional disclosure replay</h3>
+              <button className="reset-button" type="button" onClick={syncCongressTrades} disabled={congressSyncing}>
+                <DownloadIcon />
+                {congressSyncing ? 'Syncing' : 'Sync disclosures'}
+              </button>
               <label className="provider-field">
                 <span>Holding days</span>
                 <input value={congressHoldingDays} onChange={(event) => setCongressHoldingDays(event.target.value)} />
@@ -1620,6 +1682,20 @@ function ModulePanel({
                 </ul>
               ) : (
                 <p>No congressional replay has been run in this session yet.</p>
+              )}
+            </article>
+
+            <article className="module-card">
+              <h3>Disclosure sync</h3>
+              {congressIngestResult ? (
+                <ul>
+                  <li><span>Total rows</span><strong>{congressIngestResult.counts.total.toLocaleString()}</strong></li>
+                  <li><span>House parsed</span><strong>{congressIngestResult.house.parsed.toLocaleString()}</strong></li>
+                  <li><span>House inserted</span><strong>{congressIngestResult.house.inserted.toLocaleString()}</strong></li>
+                  <li><span>Senate status</span><strong>{congressIngestResult.senate.status.replace(/_/g, ' ')}</strong></li>
+                </ul>
+              ) : (
+                <p>Sync recent official House PTR PDFs before replaying disclosures.</p>
               )}
             </article>
 

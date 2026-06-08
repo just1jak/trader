@@ -100,6 +100,12 @@ Routes:
 - `GET /congress/trades`
   - Lists locally stored House/Senate disclosure rows from `congressional-trading/congress_trades.db`.
 
+- `POST /congress/ingest`
+  - Body shape: `{ "year": 2026, "limit": 25, "include_senate": false }`.
+  - Downloads the official House disclosure ZIP for the requested year, fetches recent PTR PDFs, parses ticker transaction rows, and inserts them into SQLite.
+  - Response includes House reports available/downloaded, parsed row count, inserted row count, Senate status, and current database counts.
+  - Senate placeholders are disabled; `include_senate` currently returns skipped/unavailable rather than synthetic rows.
+
 - `POST /congress/backtest`
   - Body shape: `{ "holding_days": 5 }`.
   - Replays locally stored disclosures against deterministic futures proxies.

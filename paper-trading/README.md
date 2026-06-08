@@ -11,7 +11,7 @@ A Flask + React application for backtesting and paper trading futures strategies
 - Data Sources page for readiness probes, row counts, previews, and provider errors
 - Paper Trade page for forward paper validation with live quote marks or manual prices
 - Options page for long call/put, spread, and straddle payoff simulations
-- Congress page for local congressional disclosure replay
+- Congress page for official House PTR sync and local congressional disclosure replay
 - React UI for configuring and visualizing backtests
 - Dockerized for easy deployment
 
@@ -57,7 +57,7 @@ Docker compose mounts `.env` into the backend container so Settings changes pers
 - `Live Data`: save E*TRADE consumer credentials in `Settings`, click `Connect E*TRADE`, paste the verifier code, then fetch or collect quote snapshots. Collected snapshots are stored in `data/market_data.sqlite`.
 - `Paper Trade`: create a forward paper session, then mark it from an E*TRADE live quote or a manual price. Sessions track simulated position, cash, equity, and PnL over time. This is paper-only mark-to-market validation and does not place orders.
 - `Options`: runs simulation-only payoff replays for long calls, long puts, bull call spreads, bear put spreads, and long straddles against sample, Tradovate, or Polygon underlying candles.
-- `Congress`: reads `../congressional-trading/congress_trades.db` and replays stored disclosures. The checked database currently needs scraper-populated rows before results will be meaningful.
+- `Congress`: syncs recent official House PTR PDFs into `../congressional-trading/congress_trades.db`, previews stored disclosures, and replays mapped tickers. Senate rows are not faked; the Senate scraper reports unavailable/not implemented until a real eFD parser is added.
 
 ## Development
 - Backend: Python 3.12, Flask

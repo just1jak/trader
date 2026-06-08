@@ -31,11 +31,12 @@ workflows. Live order execution is intentionally not wired here.
 - Data-source diagnostics API and dashboard page
 - Forward paper-trading sessions marked from live quotes or manual prices
 - Simulation-only options strategy payoff backtester
-- Congressional disclosure replay endpoint
+- Official House PTR disclosure importer and congressional replay endpoint
 
 ## Key Files
 
 - `congressional-trading/congress_trades.db` — congressional trade database
+- `congressional-trading/congress_ingest.py` — official House PTR ZIP/PDF importer
 - `congressional-trading/backtest.py` — congressional-to-futures backtest prototype
 - `paper-trading/` — simulation backend + UI
 - `paper-trading/API.md` — detailed API wiring notes
@@ -161,6 +162,11 @@ Routes:
 - `GET /api/v1/congress/trades`
   - Lists locally stored House/Senate disclosures from `congressional-trading/congress_trades.db`.
 
+- `POST /api/v1/congress/ingest`
+  - Downloads the official House disclosure index ZIP, fetches recent PTR PDFs, parses ticker transactions, and stores them in SQLite.
+  - Body shape: `{ "year": 2026, "limit": 25, "include_senate": false }`.
+  - Senate placeholder rows are intentionally disabled; Senate returns skipped/unavailable until a real eFD parser is added.
+
 - `POST /api/v1/congress/backtest`
   - Runs the congressional disclosure replay against deterministic futures proxies.
   - Required data caveat: the checked database exists, but it must contain scraped disclosure rows before the replay can produce trades.
@@ -186,7 +192,7 @@ Additional dashboard modules:
 - `Data Sources` — source readiness cards, row counts, sample previews, and probe errors.
 - `Paper Trade` — forward paper sessions, live quote marks, manual test marks, and equity/PnL history.
 - `Options` — simulation-only options payoff strategy replay.
-- `Congress` — local congressional disclosure replay and stored disclosure preview.
+- `Congress` — official House PTR sync, local congressional disclosure replay, and stored disclosure preview.
 
 The Vite dev server proxies `/api` to `http://localhost:5001`, and the frontend also defaults to `http://localhost:5001` during dev when `VITE_BACKEND_URL` is not set. If macOS has another service on port `5000`, use the alternate backend port path:
 
@@ -283,9 +289,9 @@ The production frontend is served by nginx. Browser requests to `/api/` are prox
 
 - Backend syntax checks pass with `python3 -m py_compile` when `PYTHONPYCACHEPREFIX` points to a writable temp directory.
 - Local sample candle loading and the options payoff simulation have been smoke-tested.
-- E*TRADE quote collection has been smoke-tested against the saved OAuth token; sandbox responses can be historical/canned.
+- E*TRADE quote collection has been smoke-tested against the saved OAuth token; sandbox responses can be historical/canned, and expired tokens return a reconnect message.
 - Tradovate and Polygon fail cleanly with JSON setup errors when credentials are missing or rejected.
-- Congressional replay is wired to local SQLite, but the current checked database has no stored disclosure rows.
+- Congressional House ingestion has been verified against the official 2026 Clerk ZIP/PDF path, and the local SQLite database now contains parsed House PTR rows. Senate eFD ingestion still needs a real parser/source before it should be trusted.
 - Frontend build has been verified with `npm run build`; the generated `dist/` folder is ignored for source control.
 
 ## External API References
