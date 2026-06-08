@@ -801,6 +801,38 @@ button {
   color: #f3f7f3;
 }
 
+.next-steps {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.next-steps > span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.next-steps ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: #dbe5dc;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.next-steps li::marker {
+  color: var(--green);
+  font-weight: 900;
+}
+
 .live-json {
   max-height: 260px;
   margin: 0;

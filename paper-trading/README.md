@@ -4,7 +4,7 @@ A Flask + React application for backtesting and paper trading strategies across 
 
 ## Features
 - Backtesting engine with pluggable strategies
-- Historical data fetch from Coinbase crypto candles, Tradovate, and Polygon
+- Historical data fetch from Coinbase crypto candles, Yahoo Finance stock candles, Tradovate, and Polygon
 - Read-only E*TRADE quote and options-chain API layer
 - Settings page for E*TRADE, Tradovate, and Polygon provider credentials
 - Live Data page for E*TRADE OAuth connect, live quote fetch, and snapshot collection
@@ -22,7 +22,7 @@ A Flask + React application for backtesting and paper trading strategies across 
 - Docker & Docker Compose
 - Tradovate API credentials for futures candles, or Polygon API credentials for stock aggregate candles
 - E*TRADE API credentials only if you want quote snapshots, options chains, or live quote marks
-- No external credentials are needed for the local sample CSV source or Coinbase crypto candles
+- No external credentials are needed for the local sample CSV source, Coinbase crypto candles, or Yahoo Finance stock/ETF candles
 
 ### Setup
 1. Copy `.env.example` to `.env` and fill in your secrets.
@@ -54,11 +54,11 @@ Docker compose mounts `.env` into the backend container so Settings changes pers
 
 ## Live Data And Strategy Modules
 
-- `Data Sources`: shows which sources are configured, whether probes succeed, how many local rows exist, and the latest sample/error returned by each provider.
-- `Backtest`: choose a provider/date range and use `Collect candles` to store OHLCV bars locally. Coinbase crypto candles and the sample CSV work without API keys. Use `Cached candles` as the source to replay stored data without another provider call.
+- `Data Sources`: shows which sources are configured, whether probes succeed, how many local rows exist, the latest sample/error returned by each provider, and source-specific next steps.
+- `Backtest`: choose a provider/date range and use `Collect candles` to store OHLCV bars locally. Coinbase crypto candles, Yahoo Finance stock candles, and the sample CSV work without API keys. Use `Cached candles` as the source to replay stored data without another provider call.
 - `Live Data`: save E*TRADE consumer credentials in `Settings`, click `Connect E*TRADE`, paste the verifier code, then fetch or collect quote snapshots. Collected snapshots are stored in `data/market_data.sqlite`.
 - `Paper Trade`: create a forward paper session, then mark it from an E*TRADE live quote or a manual price. Sessions track simulated position, cash, equity, and PnL over time. This is paper-only mark-to-market validation and does not place orders.
-- `Options`: runs simulation-only payoff replays for long calls, long puts, bull call spreads, bear put spreads, and long straddles against sample, Coinbase, Tradovate, Polygon, or cached underlying candles.
+- `Options`: runs simulation-only payoff replays for long calls, long puts, bull call spreads, bear put spreads, and long straddles against sample, Coinbase, Yahoo Finance, Tradovate, Polygon, or cached underlying candles.
 - `Congress`: syncs recent House PTR PDFs and Senate eFD-derived DataDawn/OpenRegs ticker rows into `../congressional-trading/congress_trades.db`, previews stored disclosures, and replays mapped tickers. Senate rows are not faked.
 
 ## Development

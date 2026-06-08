@@ -33,6 +33,7 @@ from utils.options_backtest import run_long_option_backtest
 from utils.polygon import PolygonClient, PolygonConfigError
 from utils.provider_config import apply_to_flask_config, provider_status, save_provider_settings
 from utils.tradovate import TradovateClient, TradovateConfigError
+from utils.yahoo import YahooClient, YahooConfigError
 
 
 api = Namespace('trading', description='Backtesting and market-data operations')
@@ -53,7 +54,7 @@ backtest_input = api.model('BacktestInput', {
     'timeframe': fields.String(required=True, description='Candle size, e.g., 1min, 5min, 1h'),
     'strategy': fields.String(required=True, description='Strategy module name'),
     'params': fields.Raw(required=True, description='Strategy parameters as JSON object'),
-    'source': fields.String(required=False, description='sample, coinbase, tradovate, polygon, or cache', default='sample'),
+    'source': fields.String(required=False, description='sample, coinbase, yahoo, tradovate, polygon, or cache', default='sample'),
 })
 
 options_backtest_input = api.model('OptionsBacktestInput', {
@@ -61,7 +62,7 @@ options_backtest_input = api.model('OptionsBacktestInput', {
     'from': fields.String(required=True, description='Start date (YYYY-MM-DD)'),
     'to': fields.String(required=True, description='End date (YYYY-MM-DD)'),
     'timeframe': fields.String(required=False, description='Candle size', default='1min'),
-    'source': fields.String(required=False, description='sample, coinbase, tradovate, polygon, or cache', default='sample'),
+    'source': fields.String(required=False, description='sample, coinbase, yahoo, tradovate, polygon, or cache', default='sample'),
     'option_type': fields.String(required=True, description='CALL or PUT'),
     'strike': fields.Float(required=True, description='Option strike'),
     'premium': fields.Float(required=True, description='Entry premium per contract'),
@@ -90,7 +91,7 @@ candle_collect_input = api.model('CandleCollectInput', {
     'from': fields.String(required=True, description='Start date (YYYY-MM-DD)'),
     'to': fields.String(required=True, description='End date (YYYY-MM-DD)'),
     'timeframe': fields.String(required=True, description='Candle size, e.g., 1min, 5min, 1h, 1d'),
-    'source': fields.String(required=True, description='Provider to collect from: sample, coinbase, tradovate, or polygon'),
+    'source': fields.String(required=True, description='Provider to collect from: sample, coinbase, yahoo, tradovate, or polygon'),
 })
 
 paper_session_input = api.model('PaperSessionInput', {
@@ -130,6 +131,7 @@ class HealthResource(Resource):
             'sources': {
                 'sample': True,
                 'coinbase': True,
+                'yahoo': True,
                 'tradovate': _provider_configured('tradovate'),
                 'etrade_market_data': _provider_configured('etrade'),
                 'polygon': _provider_configured('polygon'),
@@ -430,7 +432,7 @@ class BacktestResource(Resource):
             return _json_ready(results), 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
-        except (CoinbaseConfigError, TradovateConfigError, PolygonConfigError) as exc:
+        except (CoinbaseConfigError, YahooConfigError, TradovateConfigError, PolygonConfigError) as exc:
             return {'error': str(exc)}, 400
         except Exception as exc:
             return {'error': str(exc)}, 500
@@ -450,7 +452,7 @@ class BacktestDataResource(Resource):
         if source == 'etrade':
             return {
                 'error': 'E*TRADE market APIs provide quote and option-chain snapshots here, not historical OHLCV candles.',
-                'available_sources': ['sample', 'coinbase', 'tradovate', 'polygon', 'cache'],
+                'available_sources': ['sample', 'coinbase', 'yahoo', 'tradovate', 'polygon', 'cache'],
             }, 400
 
         try:
@@ -470,7 +472,7 @@ class BacktestDataResource(Resource):
             }, 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
-        except (CoinbaseConfigError, TradovateConfigError, PolygonConfigError) as exc:
+        except (CoinbaseConfigError, YahooConfigError, TradovateConfigError, PolygonConfigError) as exc:
             return {'error': str(exc)}, 400
 
 
@@ -516,7 +518,7 @@ class CandleCollectResource(Resource):
             }, 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
-        except (CoinbaseConfigError, TradovateConfigError, PolygonConfigError) as exc:
+        except (CoinbaseConfigError, YahooConfigError, TradovateConfigError, PolygonConfigError) as exc:
             return {'error': str(exc)}, 400
 
 
@@ -600,7 +602,7 @@ class OptionsBacktestResource(Resource):
             return _json_ready(results), 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
-        except (CoinbaseConfigError, TradovateConfigError, PolygonConfigError) as exc:
+        except (CoinbaseConfigError, YahooConfigError, TradovateConfigError, PolygonConfigError) as exc:
             return {'error': str(exc)}, 400
         except Exception as exc:
             return {'error': str(exc)}, 500
@@ -661,6 +663,7 @@ def _data_source_status(probe=False):
             rows=len(sample),
             detail='Local ES sample candles are available for credential-free backtests.',
             preview=_candle_preview(sample),
+            next_steps=['Use this source for a quick smoke test before relying on external data.'],
         ))
     except Exception as exc:
         sources.append(_source_item('sample', 'Sample CSV', True, 'error', detail=_safe_error(exc)))
@@ -680,9 +683,30 @@ def _data_source_status(probe=False):
             rows=len(coinbase),
             detail='Public no-key crypto OHLCV candles are available for backtests and collection.',
             preview=_candle_preview(coinbase),
+            next_steps=['Select Coinbase crypto in Backtest, then collect BTC-USD or ETH-USD candles into the local cache.'],
         ))
     except Exception as exc:
         sources.append(_source_item('coinbase', 'Coinbase crypto candles', True, 'error', detail=_safe_error(exc)))
+
+    try:
+        yahoo = YahooClient().get_chart(
+            symbol='AAPL',
+            timeframe='1d',
+            start='2025-01-02',
+            end='2025-01-31',
+        )
+        sources.append(_source_item(
+            key='yahoo',
+            label='Yahoo Finance stock candles',
+            configured=True,
+            status='ok' if not yahoo.empty else 'empty',
+            rows=len(yahoo),
+            detail='Public stock/ETF OHLCV candles are available for backtests and collection. This endpoint can rate-limit.',
+            preview=_candle_preview(yahoo),
+            next_steps=['Select Yahoo Finance in Backtest to collect stock or ETF candles without a Polygon key.'],
+        ))
+    except Exception as exc:
+        sources.append(_source_item('yahoo', 'Yahoo Finance stock candles', True, 'error', detail=_safe_error(exc)))
 
     tradovate_configured = bool(providers.get('tradovate', {}).get('configured'))
     if not tradovate_configured:
@@ -692,6 +716,11 @@ def _data_source_status(probe=False):
             configured=False,
             status='needs_config',
             detail='Save Tradovate credentials in Settings before probing futures candles.',
+            next_steps=[
+                'Open Settings and save TRADOVATE_USERNAME and TRADOVATE_PASSWORD.',
+                'Use the demo base URL for demo accounts or the live base URL for live Tradovate accounts.',
+                'Return here and run Probe sources to verify futures candle access.',
+            ],
         ))
     elif probe:
         try:
@@ -711,7 +740,18 @@ def _data_source_status(probe=False):
                 preview=_candle_preview(candles),
             ))
         except Exception as exc:
-            sources.append(_source_item('tradovate', 'Tradovate', True, 'error', detail=_safe_error(exc)))
+            sources.append(_source_item(
+                'tradovate',
+                'Tradovate',
+                True,
+                'error',
+                detail=_safe_error(exc),
+                next_steps=[
+                    'Confirm the Tradovate account type matches the configured base URL.',
+                    'Re-save username/password and optional cid/sec fields in Settings.',
+                    'Probe again after credentials are accepted.',
+                ],
+            ))
     else:
         sources.append(_source_item(
             key='tradovate',
@@ -719,6 +759,7 @@ def _data_source_status(probe=False):
             configured=True,
             status='ready',
             detail='Configured. Run a probe to verify live credential and market-data access.',
+            next_steps=['Run Probe sources before using Tradovate for a backtest or candle collection.'],
         ))
 
     etrade_configured = bool(providers.get('etrade', {}).get('configured'))
@@ -731,6 +772,10 @@ def _data_source_status(probe=False):
             status='needs_config',
             rows=snapshot_count,
             detail='Complete E*TRADE OAuth before probing quotes and options chains.',
+            next_steps=[
+                'Open Settings and save E*TRADE consumer key and consumer secret.',
+                'Open Live Data, click Connect E*TRADE, authorize access, and save the verifier code.',
+            ],
         ))
     elif probe:
         try:
@@ -746,7 +791,19 @@ def _data_source_status(probe=False):
                 preview=summary[0] if summary else {},
             ))
         except Exception as exc:
-            sources.append(_source_item('etrade_market_data', 'E*TRADE market data', True, 'error', rows=snapshot_count, detail=_safe_error(exc)))
+            sources.append(_source_item(
+                'etrade_market_data',
+                'E*TRADE market data',
+                True,
+                'error',
+                rows=snapshot_count,
+                detail=_safe_error(exc),
+                next_steps=[
+                    'Open Live Data and click Connect E*TRADE to generate a fresh authorization URL.',
+                    'Approve access, paste the verifier code, and save the new access token.',
+                    'Confirm sandbox/live environment matches the token you authorized.',
+                ],
+            ))
     else:
         sources.append(_source_item(
             key='etrade_market_data',
@@ -755,6 +812,7 @@ def _data_source_status(probe=False):
             status='ready',
             rows=snapshot_count,
             detail='Configured. Run a probe to verify quote access; collected snapshots are counted here.',
+            next_steps=['Run Probe sources or fetch a quote from Live Data before using E*TRADE paper marks.'],
         ))
 
     polygon_configured = bool(providers.get('polygon', {}).get('configured'))
@@ -765,6 +823,11 @@ def _data_source_status(probe=False):
             configured=False,
             status='needs_config',
             detail='Save a Polygon API key in Settings before probing stock aggregate bars.',
+            next_steps=[
+                'Open Settings and save POLYGON_API_KEY.',
+                'Use Yahoo Finance for public stock candles while Polygon is unconfigured.',
+                'Probe again after adding the key.',
+            ],
         ))
     elif probe:
         try:
@@ -779,7 +842,17 @@ def _data_source_status(probe=False):
                 preview=_candle_preview(candles),
             ))
         except Exception as exc:
-            sources.append(_source_item('polygon', 'Polygon', True, 'error', detail=_safe_error(exc)))
+            sources.append(_source_item(
+                'polygon',
+                'Polygon',
+                True,
+                'error',
+                detail=_safe_error(exc),
+                next_steps=[
+                    'Confirm the Polygon key is active and has aggregate-bar access.',
+                    'Try a daily AAPL probe first, then widen symbols/timeframes after it passes.',
+                ],
+            ))
     else:
         sources.append(_source_item(
             key='polygon',
@@ -787,6 +860,7 @@ def _data_source_status(probe=False):
             configured=True,
             status='ready',
             detail='Configured. Run a probe to verify aggregate-bar access.',
+            next_steps=['Run Probe sources before collecting Polygon candles into the local cache.'],
         ))
 
     cache_rows = cache_row_count()
@@ -799,6 +873,7 @@ def _data_source_status(probe=False):
         rows=cache_rows,
         detail='Local OHLCV candle cache populated by the collect-candles route.',
         preview=cache_summary[0] if cache_summary else {},
+        next_steps=['Use source=cache to replay collected Yahoo, Coinbase, Polygon, Tradovate, or sample candles without another provider call.'],
     ))
 
     congressional = list_congressional_trades(limit=5)
@@ -815,12 +890,13 @@ def _data_source_status(probe=False):
             'counts': congressional_counts,
             'latest': (congressional.get('trades') or [{}])[0],
         },
+        next_steps=['Use the Congress tab to sync disclosures and run the congressional replay.'],
     ))
 
     return sources
 
 
-def _source_item(key, label, configured, status, rows=0, detail='', preview=None):
+def _source_item(key, label, configured, status, rows=0, detail='', preview=None, next_steps=None):
     return {
         'key': key,
         'label': label,
@@ -829,6 +905,7 @@ def _source_item(key, label, configured, status, rows=0, detail='', preview=None
         'rows': rows,
         'detail': detail,
         'preview': _json_ready(preview or {}),
+        'next_steps': next_steps or [],
     }
 
 
@@ -865,6 +942,13 @@ def _load_backtest_candles(payload):
     if source == 'coinbase':
         return CoinbaseClient().get_candles(
             product_id=payload.get('symbol', 'BTC-USD'),
+            timeframe=payload.get('timeframe', '1d'),
+            start=payload.get('from'),
+            end=payload.get('to'),
+        )
+    if source == 'yahoo':
+        return YahooClient().get_chart(
+            symbol=payload.get('symbol', 'AAPL'),
             timeframe=payload.get('timeframe', '1d'),
             start=payload.get('from'),
             end=payload.get('to'),

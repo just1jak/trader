@@ -17,7 +17,7 @@ type BacktestForm = {
   timeframe: string;
   strategy: StrategyKey;
   params: Record<string, number | string | boolean>;
-  source: 'sample' | 'coinbase' | 'tradovate' | 'polygon' | 'cache';
+  source: 'sample' | 'coinbase' | 'yahoo' | 'tradovate' | 'polygon' | 'cache';
 };
 
 type Metric = {
@@ -124,6 +124,7 @@ type SourceDiagnostic = {
   rows: number;
   detail: string;
   preview: Record<string, unknown>;
+  next_steps?: string[];
 };
 
 type PaperStrategy = 'forward_long' | 'forward_short' | 'observe_only';
@@ -171,7 +172,7 @@ type OptionsForm = {
   symbol: string;
   from: string;
   to: string;
-  source: 'sample' | 'coinbase' | 'tradovate' | 'polygon' | 'cache';
+  source: 'sample' | 'coinbase' | 'yahoo' | 'tradovate' | 'polygon' | 'cache';
   timeframe: string;
   strategy: 'long_call' | 'long_put' | 'bull_call_spread' | 'bear_put_spread' | 'long_straddle';
   option_type: 'CALL' | 'PUT';
@@ -581,6 +582,19 @@ function App() {
         }));
         return;
       }
+      if (source === 'yahoo') {
+        setFormData((previous) => ({
+          ...previous,
+          source,
+          symbol: 'AAPL',
+          timeframe: '1d',
+          from: '2025-01-02',
+          to: '2025-01-31',
+          strategy: 'ma_crossover',
+          params: defaultParams.ma_crossover,
+        }));
+        return;
+      }
       setFormData((previous) => ({
         ...previous,
         source,
@@ -677,9 +691,10 @@ function App() {
       setSourceDiagnostics(data.sources);
       const errors = data.sources.filter((source) => source.status === 'error');
       const empty = data.sources.filter((source) => source.status === 'empty');
+      const needsConfig = data.sources.filter((source) => source.status === 'needs_config');
       setSourceProbeMessage(
         probe
-          ? `Probe complete: ${data.sources.filter((source) => source.status === 'ok').length} ok, ${errors.length} error, ${empty.length} empty.`
+          ? `Probe complete: ${data.sources.filter((source) => source.status === 'ok').length} ok, ${needsConfig.length} need config, ${errors.length} error, ${empty.length} empty.`
           : 'Ready to probe configured data sources.',
       );
     }
@@ -917,6 +932,17 @@ function App() {
         next.short_premium = '1000';
         next.multiplier = '1';
       }
+      if (field === 'source' && value === 'yahoo') {
+        next.symbol = 'AAPL';
+        next.timeframe = '1d';
+        next.from = '2025-01-02';
+        next.to = '2025-01-31';
+        next.strike = '240';
+        next.premium = '12.50';
+        next.short_strike = '260';
+        next.short_premium = '4.00';
+        next.multiplier = '100';
+      }
       if (field === 'source' && value === 'sample') {
         next.symbol = 'ES';
       }
@@ -1130,6 +1156,7 @@ function App() {
               <select value={formData.source} onChange={(event) => updateField('source', event.target.value)}>
                 <option value="sample">Sample CSV</option>
                 <option value="coinbase">Coinbase crypto</option>
+                <option value="yahoo">Yahoo Finance</option>
                 <option value="tradovate">Tradovate</option>
                 <option value="polygon">Polygon</option>
                 <option value="cache">Cached candles</option>
@@ -1504,6 +1531,16 @@ function ModulePanel({
                   <li><span>Rows / records</span><strong>{source.rows.toLocaleString()}</strong></li>
                   <li><span>Source key</span><strong>{source.key}</strong></li>
                 </ul>
+                {source.next_steps?.length ? (
+                  <div className="next-steps">
+                    <span>Next steps</span>
+                    <ol>
+                      {source.next_steps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
                 <pre className="live-json">{summarizePayload(source.preview)}</pre>
               </article>
             ))}
@@ -1657,6 +1694,7 @@ function ModulePanel({
                   <select value={optionForm.source} onChange={(event) => updateOptionField('source', event.target.value)}>
                     <option value="sample">Sample CSV</option>
                     <option value="coinbase">Coinbase crypto</option>
+                    <option value="yahoo">Yahoo Finance</option>
                     <option value="tradovate">Tradovate</option>
                     <option value="polygon">Polygon</option>
                     <option value="cache">Cached candles</option>
