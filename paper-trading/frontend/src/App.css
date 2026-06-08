@@ -922,6 +922,13 @@ button {
   font-weight: 620;
 }
 
+.provider-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: stretch;
+}
+
 .provider-field input,
 .provider-field select {
   width: 100%;
@@ -937,6 +944,28 @@ button {
   color-scheme: dark;
   font-size: 13px;
   font-weight: 620;
+}
+
+.field-clear-button {
+  min-height: 40px;
+  padding: 0 12px;
+  color: #ffb8b8;
+  background: rgba(255, 58, 71, 0.12);
+  border: 1px solid rgba(255, 58, 71, 0.35);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.field-clear-button:hover:not(:disabled) {
+  color: #fff;
+  background: rgba(255, 58, 71, 0.22);
+}
+
+.field-clear-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .provider-field input:focus,

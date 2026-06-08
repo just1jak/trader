@@ -766,6 +766,23 @@ function App() {
     setSavingProvider(null);
   };
 
+  const clearProviderField = async (providerKey: string, fieldKey: string) => {
+    setSavingProvider(providerKey);
+    const data = await callApi<{ providers: ProviderSettings[] }>(`/api/v1/settings/providers/${providerKey}/clear`, {
+      method: 'POST',
+      body: JSON.stringify({ keys: [fieldKey] }),
+    });
+    if (data?.providers) {
+      setProviderSettings(data.providers);
+      setProviderForms((previous) => ({ ...previous, [providerKey]: { ...(previous[providerKey] ?? {}), [fieldKey]: '' } }));
+      setLastAction(`${fieldKey} cleared`);
+      const health = await callApi<ApiHealth>('/api/v1/health');
+      if (health) setApiHealth(health);
+      await loadSourceDiagnostics(false);
+    }
+    setSavingProvider(null);
+  };
+
   const startEtradeOAuth = async () => {
     const data = await callApi<{ authorize_url: string; message: string }>('/api/v1/etrade/oauth/start', {
       method: 'POST',
@@ -1090,6 +1107,7 @@ function App() {
             runCongressBacktest={runCongressBacktest}
             syncCongressTrades={syncCongressTrades}
             runOptionsBacktest={runOptionsBacktest}
+            clearProviderField={clearProviderField}
             saveProviderSettings={saveProviderSettings}
             savingProvider={savingProvider}
             setCongressHoldingDays={setCongressHoldingDays}
@@ -1329,6 +1347,7 @@ function ModulePanel({
   runCongressBacktest,
   syncCongressTrades,
   runOptionsBacktest,
+  clearProviderField,
   saveProviderSettings,
   savingProvider,
   setCongressHoldingDays,
@@ -1377,6 +1396,7 @@ function ModulePanel({
   runCongressBacktest: () => void;
   syncCongressTrades: () => void;
   runOptionsBacktest: () => void;
+  clearProviderField: (providerKey: string, fieldKey: string) => void;
   saveProviderSettings: (providerKey: string) => void;
   savingProvider: string | null;
   setCongressHoldingDays: (value: string) => void;
@@ -1895,13 +1915,26 @@ function ModulePanel({
                         <option value="live">live</option>
                       </select>
                     ) : (
-                      <input
-                        autoComplete="off"
-                        placeholder={field.secret ? (field.configured ? 'Leave blank to keep saved value' : 'Paste key or secret') : field.value}
-                        type={field.secret ? 'password' : 'text'}
-                        value={providerForms[provider.key]?.[field.key] ?? (field.secret ? '' : field.value ?? '')}
-                        onChange={(event) => updateProviderField(provider.key, field.key, event.target.value)}
-                      />
+                      <div className="provider-input-row">
+                        <input
+                          autoComplete="off"
+                          placeholder={field.secret ? (field.configured ? 'Leave blank to keep saved value' : 'Paste key or secret') : field.value}
+                          type={field.secret ? 'password' : 'text'}
+                          value={providerForms[provider.key]?.[field.key] ?? (field.secret ? '' : field.value ?? '')}
+                          onChange={(event) => updateProviderField(provider.key, field.key, event.target.value)}
+                        />
+                        {field.secret && field.configured ? (
+                          <button
+                            aria-label={`Clear ${field.label}`}
+                            className="field-clear-button"
+                            disabled={savingProvider === provider.key}
+                            onClick={() => clearProviderField(provider.key, field.key)}
+                            type="button"
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
                     )}
                   </label>
                 ))}

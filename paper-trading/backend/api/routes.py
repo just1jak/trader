@@ -31,7 +31,7 @@ from utils.etrade_collection import (
 )
 from utils.options_backtest import run_long_option_backtest
 from utils.polygon import PolygonClient, PolygonConfigError
-from utils.provider_config import apply_to_flask_config, provider_status, save_provider_settings
+from utils.provider_config import apply_to_flask_config, clear_provider_settings, provider_status, save_provider_settings
 from utils.tradovate import TradovateClient, TradovateConfigError
 from utils.yahoo import YahooClient, YahooConfigError
 
@@ -75,6 +75,10 @@ options_backtest_input = api.model('OptionsBacktestInput', {
 
 provider_settings_input = api.model('ProviderSettingsInput', {
     'values': fields.Raw(required=True, description='Provider environment key/value settings'),
+})
+
+provider_settings_clear_input = api.model('ProviderSettingsClearInput', {
+    'keys': fields.List(fields.String, required=True, description='Provider environment keys to clear'),
 })
 
 etrade_oauth_complete_input = api.model('ETradeOAuthCompleteInput', {
@@ -175,6 +179,20 @@ class ProviderSettingsResource(Resource):
     def post(self, provider_key):
         try:
             providers = save_provider_settings(provider_key, (api.payload or {}).get('values') or {})
+            apply_to_flask_config(current_app)
+            return {'providers': providers}, 200
+        except ValueError as exc:
+            return {'error': str(exc)}, 400
+
+
+@api.route('/settings/providers/<string:provider_key>/clear')
+class ProviderSettingsClearResource(Resource):
+    @api.expect(provider_settings_clear_input)
+    @api.response(200, 'Cleared')
+    @api.response(400, 'Validation Error')
+    def post(self, provider_key):
+        try:
+            providers = clear_provider_settings(provider_key, (api.payload or {}).get('keys') or [])
             apply_to_flask_config(current_app)
             return {'providers': providers}, 200
         except ValueError as exc:

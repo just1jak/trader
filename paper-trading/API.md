@@ -31,6 +31,11 @@ All routes are mounted under `/api/v1`.
   - Blank submitted fields are ignored, so a blank saved secret input keeps the existing value.
   - Tradovate prefers `TRADOVATE_USERNAME` and `TRADOVATE_PASSWORD`, with optional `TRADOVATE_CID` and `TRADOVATE_SECRET` for app registration credentials. Legacy `TRADOVATE_API_KEY` and `TRADOVATE_API_SECRET` remain username/password fallbacks.
 
+- `POST /settings/providers/{provider_key}/clear`
+  - Clears selected saved provider keys from `.env` and reloads Flask config.
+  - Body shape: `{ "keys": ["ETRADE_ACCESS_TOKEN", "ETRADE_ACCESS_TOKEN_SECRET"] }`.
+  - Use this to remove stale OAuth tokens before reconnecting a provider.
+
 ## Data Source Diagnostics
 
 - `GET /data/sources`

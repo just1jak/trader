@@ -43,6 +43,7 @@ npm run dev
 ## Provider Settings
 
 Use the frontend `Settings` page to enter provider details. The backend saves those values into `paper-trading/.env`; secret values are masked when returned to the browser, and blank saved secret inputs keep their existing value.
+Saved secret fields can also be cleared explicitly from `Settings`, which is useful for removing expired E*TRADE access tokens before reconnecting OAuth.
 
 Supported settings today:
 

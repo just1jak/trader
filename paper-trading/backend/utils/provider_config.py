@@ -101,13 +101,31 @@ def save_provider_settings(provider_key, values):
     return provider_status()
 
 
+def clear_provider_settings(provider_key, keys):
+    if provider_key not in PROVIDERS:
+        raise ValueError(f'Unsupported provider: {provider_key}')
+
+    provider = PROVIDERS[provider_key]
+    allowed_keys = set(provider['fields'])
+    clear_keys = [key for key in (keys or []) if key in allowed_keys]
+    if not clear_keys:
+        return provider_status()
+
+    env_values = _read_env_file()
+    for key in clear_keys:
+        env_values.pop(key, None)
+        os.environ.pop(key, None)
+
+    _write_env_file(env_values, removed_keys=set(clear_keys))
+    return provider_status()
+
+
 def apply_to_flask_config(app):
     env_values = _read_env_file()
     for provider in PROVIDERS.values():
         for key, meta in provider['fields'].items():
             value = env_values.get(key) or os.getenv(key) or meta.get('default')
-            if value is not None:
-                app.config[key] = value
+            app.config[key] = value
 
     etrade_env = str(app.config.get('ETRADE_ENV', 'sandbox')).lower()
     app.config['ETRADE_BASE_URL'] = (
@@ -131,8 +149,9 @@ def _read_env_file():
     return values
 
 
-def _write_env_file(values):
+def _write_env_file(values, removed_keys=None):
     existing_lines = ENV_PATH.read_text().splitlines() if ENV_PATH.exists() else []
+    removed_keys = removed_keys or set()
     seen = set()
     output = []
 
@@ -144,6 +163,8 @@ def _write_env_file(values):
 
         key, _ = stripped.split('=', 1)
         key = key.strip()
+        if key in removed_keys:
+            continue
         if key in values:
             output.append(f'{key}={values[key]}')
             seen.add(key)

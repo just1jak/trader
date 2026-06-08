@@ -204,6 +204,7 @@ The dashboard also includes a `Settings` module for broker and market-data crede
 - Tradovate stores historical futures data credentials used by backtests. Prefer `TRADOVATE_USERNAME` and `TRADOVATE_PASSWORD`; optional app registration fields are `TRADOVATE_CID` and `TRADOVATE_SECRET`. The older `TRADOVATE_API_KEY` and `TRADOVATE_API_SECRET` names are still supported as username/password fallbacks.
 - Polygon stores the API key and optional base URL used by stock candle backtests.
 - Secret fields are masked when read back by the browser. Leaving a saved secret field blank keeps the existing value.
+- Saved secret fields can be explicitly cleared in Settings, which is useful when an E*TRADE access token expires or a provider key needs to be replaced.
 
 Additional dashboard modules:
 
