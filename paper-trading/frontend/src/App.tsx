@@ -212,6 +212,47 @@ type CachePreview = {
   candles: CandleRecord[];
 };
 
+type SourceWorkbenchSource =
+  | 'sample'
+  | 'coinbase'
+  | 'yahoo'
+  | 'tradovate'
+  | 'polygon'
+  | 'cache'
+  | 'etrade_market_data';
+
+type SourceWorkbenchForm = {
+  source: SourceWorkbenchSource;
+  symbol: string;
+  timeframe: string;
+  from: string;
+  to: string;
+  detailFlag: string;
+};
+
+type SourceWorkbenchResult =
+  | {
+      kind: 'candles';
+      label: string;
+      rows: number;
+      candles: CandleRecord[];
+    }
+  | {
+      kind: 'quote';
+      label: string;
+      rows: number;
+      summary: QuoteSummary[];
+      data: unknown;
+    };
+
+type SourceWorkbenchCandleResponse = {
+  source: string;
+  symbol: string;
+  timeframe: string;
+  rows: number;
+  candles: CandleRecord[];
+};
+
 type PaperStrategy = 'forward_long' | 'forward_short' | 'observe_only';
 
 type PaperForm = {
@@ -536,6 +577,15 @@ const navItems = [
   { label: 'Settings', icon: <CogIcon /> },
 ];
 
+const defaultSourceWorkbenchForm: SourceWorkbenchForm = {
+  source: 'yahoo',
+  symbol: 'AAPL',
+  timeframe: '1d',
+  from: '2025-01-02',
+  to: '2025-01-31',
+  detailFlag: 'ALL',
+};
+
 function App() {
   const { callApi, loading, error, clearError } = useApi();
   const [activeNav, setActiveNav] = useState('Backtest');
@@ -563,6 +613,9 @@ function App() {
   const [cacheRows, setCacheRows] = useState(0);
   const [cacheDatasets, setCacheDatasets] = useState<CacheDataset[]>([]);
   const [cachePreview, setCachePreview] = useState<CachePreview | null>(null);
+  const [sourceWorkbenchForm, setSourceWorkbenchForm] = useState<SourceWorkbenchForm>(defaultSourceWorkbenchForm);
+  const [sourceWorkbenchMessage, setSourceWorkbenchMessage] = useState('Ready for a custom source request.');
+  const [sourceWorkbenchResult, setSourceWorkbenchResult] = useState<SourceWorkbenchResult | null>(null);
   const [providerSettings, setProviderSettings] = useState<ProviderSettings[]>([]);
   const [providerForms, setProviderForms] = useState<Record<string, Record<string, string>>>({});
   const [savingProvider, setSavingProvider] = useState<string | null>(null);
@@ -848,6 +901,134 @@ function App() {
     if (data) {
       setCachePreview(data);
       setLastAction(`Previewing ${data.rows} cached ${data.symbol} candles`);
+    }
+    return data;
+  };
+
+  const updateSourceWorkbenchField = (field: keyof SourceWorkbenchForm, value: string) => {
+    if (field === 'source') {
+      const source = value as SourceWorkbenchSource;
+      if (source === 'cache' && cacheDatasets[0]) {
+        const dataset = cacheDatasets[0];
+        setSourceWorkbenchForm({
+          source,
+          symbol: dataset.symbol,
+          timeframe: dataset.timeframe,
+          from: dataset.first_timestamp.slice(0, 10),
+          to: dataset.last_timestamp.slice(0, 10),
+          detailFlag: 'ALL',
+        });
+        return;
+      }
+      setSourceWorkbenchForm(sourceWorkbenchDefaults(source));
+      return;
+    }
+    setSourceWorkbenchForm((previous) => ({ ...previous, [field]: value }));
+  };
+
+  const previewSourceWorkbenchData = async () => {
+    if (sourceWorkbenchForm.source === 'etrade_market_data') {
+      setSourceWorkbenchMessage(`Fetching E*TRADE quote for ${sourceWorkbenchForm.symbol}...`);
+      const params = new URLSearchParams({
+        symbols: sourceWorkbenchForm.symbol,
+        detailFlag: sourceWorkbenchForm.detailFlag,
+      });
+      const data = await callApi<LiveQuoteResult>(`/api/v1/etrade/live/quote?${params.toString()}`);
+      if (data) {
+        const summary = data.summary ?? [];
+        setLiveQuote(data);
+        setSourceWorkbenchResult({
+          kind: 'quote',
+          label: `E*TRADE ${data.symbols}`,
+          rows: summary.length,
+          summary,
+          data: data.data,
+        });
+        setSourceWorkbenchMessage(`Loaded ${summary.length} E*TRADE quote summaries.`);
+      }
+      return data;
+    }
+
+    setSourceWorkbenchMessage(`Loading ${sourceWorkbenchForm.source} candles for ${sourceWorkbenchForm.symbol}...`);
+    const params = sourceWorkbenchParams(sourceWorkbenchForm);
+    const data = await callApi<SourceWorkbenchCandleResponse>(`/api/v1/market/backtest-data?${params.toString()}`);
+    if (data) {
+      setSourceWorkbenchResult({
+        kind: 'candles',
+        label: `${data.source} ${data.symbol} ${data.timeframe}`,
+        rows: data.rows,
+        candles: (data.candles ?? []).slice(0, 10),
+      });
+      setSourceWorkbenchMessage(`Loaded ${data.rows} ${data.source} candles.`);
+    }
+    return data;
+  };
+
+  const collectSourceWorkbenchData = async () => {
+    if (sourceWorkbenchForm.source === 'cache') {
+      setSourceWorkbenchMessage('Cached candles are replay-only; preview the cached dataset instead.');
+      return null;
+    }
+
+    if (sourceWorkbenchForm.source === 'etrade_market_data') {
+      setSourceWorkbenchMessage(`Collecting E*TRADE quote for ${sourceWorkbenchForm.symbol}...`);
+      const data = await callApi<{ data: unknown; summary?: QuoteSummary[]; snapshots: LiveSnapshot[] }>('/api/v1/etrade/live/collect', {
+        method: 'POST',
+        body: JSON.stringify({
+          symbols: sourceWorkbenchForm.symbol,
+          detailFlag: sourceWorkbenchForm.detailFlag,
+        }),
+      });
+      if (data) {
+        const summary = data.summary ?? [];
+        setLiveQuote({ symbols: sourceWorkbenchForm.symbol, detailFlag: sourceWorkbenchForm.detailFlag, summary, data: data.data });
+        setLiveSnapshots(data.snapshots ?? []);
+        setSourceWorkbenchResult({
+          kind: 'quote',
+          label: `E*TRADE ${sourceWorkbenchForm.symbol}`,
+          rows: summary.length,
+          summary,
+          data: data.data,
+        });
+        setSourceWorkbenchMessage(`Collected ${summary.length} E*TRADE quote summaries.`);
+        await loadSourceDiagnostics(false);
+      }
+      return data;
+    }
+
+    setSourceWorkbenchMessage(`Collecting ${sourceWorkbenchForm.source} candles for ${sourceWorkbenchForm.symbol}...`);
+    const data = await callApi<{ saved: { rows: number; inserted_or_updated: number }; rows: number; source: string }>(
+      '/api/v1/market/candles/collect',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          source: sourceWorkbenchForm.source,
+          symbol: sourceWorkbenchForm.symbol,
+          timeframe: sourceWorkbenchForm.timeframe,
+          from: sourceWorkbenchForm.from,
+          to: sourceWorkbenchForm.to,
+        }),
+      },
+    );
+    if (data?.saved) {
+      setSourceWorkbenchMessage(`Cached ${data.saved.inserted_or_updated} ${data.source} candles.`);
+      await loadCandleCache();
+      await loadSourceDiagnostics(false);
+      const previewParams = sourceWorkbenchParams({
+        ...sourceWorkbenchForm,
+        source: 'cache',
+      });
+      previewParams.set('source', data.source);
+      previewParams.set('limit', '10');
+      const preview = await callApi<CachePreview>(`/api/v1/market/candles/cache/preview?${previewParams.toString()}`);
+      if (preview) {
+        setSourceWorkbenchResult({
+          kind: 'candles',
+          label: `cached ${preview.symbol} ${preview.timeframe}`,
+          rows: preview.rows,
+          candles: preview.candles ?? [],
+        });
+      }
     }
     return data;
   };
@@ -1276,10 +1457,16 @@ function App() {
             cachePreview={cachePreview}
             cacheRows={cacheRows}
             collectDefaultData={collectDefaultData}
+            collectSourceWorkbenchData={collectSourceWorkbenchData}
+            previewSourceWorkbenchData={previewSourceWorkbenchData}
             startEtradeOAuth={startEtradeOAuth}
+            sourceWorkbenchForm={sourceWorkbenchForm}
+            sourceWorkbenchMessage={sourceWorkbenchMessage}
+            sourceWorkbenchResult={sourceWorkbenchResult}
             updateOptionField={updateOptionField}
             updatePaperField={updatePaperField}
             updateProviderField={updateProviderField}
+            updateSourceWorkbenchField={updateSourceWorkbenchField}
             loadSourceDiagnostics={loadSourceDiagnostics}
             loadCandleCache={loadCandleCache}
             previewCacheDataset={previewCacheDataset}
@@ -1475,6 +1662,35 @@ function QuoteSummaryList({ summaries }: { summaries: QuoteSummary[] }) {
   );
 }
 
+function CandleRowsTable({ candles, rows, title }: { candles: CandleRecord[]; rows: number; title: string }) {
+  return (
+    <div className="cache-preview-table">
+      <div className="cache-preview-heading">
+        <strong>{title}</strong>
+        <span>{rows.toLocaleString()} total rows</span>
+      </div>
+      <div className="cache-preview-grid">
+        <span>Time</span>
+        <span>Open</span>
+        <span>High</span>
+        <span>Low</span>
+        <span>Close</span>
+        <span>Volume</span>
+        {candles.map((candle, index) => (
+          <React.Fragment key={`${candle.timestamp}-${index}`}>
+            <strong>{String(candle.timestamp ?? 'n/a')}</strong>
+            <strong>{formatNumber(candle.open)}</strong>
+            <strong>{formatNumber(candle.high)}</strong>
+            <strong>{formatNumber(candle.low)}</strong>
+            <strong>{formatNumber(candle.close)}</strong>
+            <strong>{formatNumber(candle.volume)}</strong>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ModulePanel({
   activeNav,
   apiHealth,
@@ -1527,10 +1743,16 @@ function ModulePanel({
   cachePreview,
   cacheRows,
   collectDefaultData,
+  collectSourceWorkbenchData,
+  previewSourceWorkbenchData,
   startEtradeOAuth,
+  sourceWorkbenchForm,
+  sourceWorkbenchMessage,
+  sourceWorkbenchResult,
   updateOptionField,
   updatePaperField,
   updateProviderField,
+  updateSourceWorkbenchField,
   loadSourceDiagnostics,
   loadCandleCache,
   previewCacheDataset,
@@ -1587,10 +1809,16 @@ function ModulePanel({
   cachePreview: CachePreview | null;
   cacheRows: number;
   collectDefaultData: () => void;
+  collectSourceWorkbenchData: () => void;
+  previewSourceWorkbenchData: () => void;
   startEtradeOAuth: () => void;
+  sourceWorkbenchForm: SourceWorkbenchForm;
+  sourceWorkbenchMessage: string;
+  sourceWorkbenchResult: SourceWorkbenchResult | null;
   updateOptionField: (field: keyof OptionsForm, value: string) => void;
   updatePaperField: (field: keyof PaperForm, value: string) => void;
   updateProviderField: (providerKey: string, fieldKey: string, value: string) => void;
+  updateSourceWorkbenchField: (field: keyof SourceWorkbenchForm, value: string) => void;
   loadSourceDiagnostics: (probe?: boolean) => void;
   loadCandleCache: () => void;
   previewCacheDataset: (dataset: CacheDataset) => void;
@@ -1723,6 +1951,92 @@ function ModulePanel({
               </div>
             </article>
 
+            <article className="module-card is-wide source-workbench-card">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Source workbench</h3>
+                  <p>{sourceWorkbenchMessage}</p>
+                </div>
+                <strong className={sourceWorkbenchResult?.rows ? 'module-status-ok' : 'module-status-warn'}>
+                  {sourceWorkbenchResult ? `${sourceWorkbenchResult.rows.toLocaleString()} rows` : 'idle'}
+                </strong>
+              </div>
+              <div className="module-form-grid source-workbench-grid">
+                <label className="provider-field">
+                  <span>Source</span>
+                  <select value={sourceWorkbenchForm.source} onChange={(event) => updateSourceWorkbenchField('source', event.target.value)}>
+                    <option value="sample">Sample CSV</option>
+                    <option value="coinbase">Coinbase crypto</option>
+                    <option value="yahoo">Yahoo Finance</option>
+                    <option value="tradovate">Tradovate</option>
+                    <option value="polygon">Polygon</option>
+                    <option value="cache">Cached candles</option>
+                    <option value="etrade_market_data">E*TRADE quote</option>
+                  </select>
+                </label>
+                <label className="provider-field">
+                  <span>Symbol</span>
+                  <input value={sourceWorkbenchForm.symbol} onChange={(event) => updateSourceWorkbenchField('symbol', event.target.value)} />
+                </label>
+                {sourceWorkbenchForm.source === 'etrade_market_data' ? (
+                  <label className="provider-field">
+                    <span>Detail flag</span>
+                    <select value={sourceWorkbenchForm.detailFlag} onChange={(event) => updateSourceWorkbenchField('detailFlag', event.target.value)}>
+                      <option value="ALL">ALL</option>
+                      <option value="INTRADAY">INTRADAY</option>
+                      <option value="FUNDAMENTAL">FUNDAMENTAL</option>
+                      <option value="OPTIONS">OPTIONS</option>
+                      <option value="WEEK_52">WEEK_52</option>
+                    </select>
+                  </label>
+                ) : (
+                  <>
+                    <label className="provider-field">
+                      <span>Timeframe</span>
+                      <select value={sourceWorkbenchForm.timeframe} onChange={(event) => updateSourceWorkbenchField('timeframe', event.target.value)}>
+                        <option value="1min">1m</option>
+                        <option value="5min">5m</option>
+                        <option value="15min">15m</option>
+                        <option value="1h">1h</option>
+                        <option value="1d">1d</option>
+                      </select>
+                    </label>
+                    <label className="provider-field">
+                      <span>From</span>
+                      <input type="date" value={sourceWorkbenchForm.from.slice(0, 10)} onChange={(event) => updateSourceWorkbenchField('from', event.target.value)} />
+                    </label>
+                    <label className="provider-field">
+                      <span>To</span>
+                      <input type="date" value={sourceWorkbenchForm.to.slice(0, 10)} onChange={(event) => updateSourceWorkbenchField('to', event.target.value)} />
+                    </label>
+                  </>
+                )}
+              </div>
+              <div className="action-row">
+                <button className="run-button" type="button" onClick={previewSourceWorkbenchData}>
+                  <ChartIcon />
+                  Preview source
+                </button>
+                <button className="reset-button" type="button" disabled={sourceWorkbenchForm.source === 'cache'} onClick={collectSourceWorkbenchData}>
+                  <DownloadIcon />
+                  Collect source
+                </button>
+              </div>
+              {sourceWorkbenchResult?.kind === 'candles' ? (
+                <CandleRowsTable
+                  candles={sourceWorkbenchResult.candles}
+                  rows={sourceWorkbenchResult.rows}
+                  title={sourceWorkbenchResult.label}
+                />
+              ) : null}
+              {sourceWorkbenchResult?.kind === 'quote' ? (
+                <div className="workbench-quote-result">
+                  {sourceWorkbenchResult.summary.length ? <QuoteSummaryList summaries={sourceWorkbenchResult.summary} /> : null}
+                  <pre className="live-json">{summarizePayload(sourceWorkbenchResult.data)}</pre>
+                </div>
+              ) : null}
+            </article>
+
             <article className="module-card is-wide">
               <div className="provider-card-header">
                 <div>
@@ -1820,30 +2134,11 @@ function ModulePanel({
                     ))}
                   </ul>
                   {cachePreview ? (
-                    <div className="cache-preview-table">
-                      <div className="cache-preview-heading">
-                        <strong>{cachePreview.symbol} cached candles</strong>
-                        <span>{cachePreview.rows.toLocaleString()} total rows</span>
-                      </div>
-                      <div className="cache-preview-grid">
-                        <span>Time</span>
-                        <span>Open</span>
-                        <span>High</span>
-                        <span>Low</span>
-                        <span>Close</span>
-                        <span>Volume</span>
-                        {cachePreview.candles.map((candle, index) => (
-                          <React.Fragment key={`${candle.timestamp}-${index}`}>
-                            <strong>{String(candle.timestamp ?? 'n/a')}</strong>
-                            <strong>{formatNumber(candle.open)}</strong>
-                            <strong>{formatNumber(candle.high)}</strong>
-                            <strong>{formatNumber(candle.low)}</strong>
-                            <strong>{formatNumber(candle.close)}</strong>
-                            <strong>{formatNumber(candle.volume)}</strong>
-                          </React.Fragment>
-                        ))}
-                      </div>
-                    </div>
+                    <CandleRowsTable
+                      candles={cachePreview.candles}
+                      rows={cachePreview.rows}
+                      title={`${cachePreview.symbol} cached candles`}
+                    />
                   ) : null}
                 </>
               ) : (
@@ -2732,6 +3027,38 @@ function moduleDescription(activeNav: string) {
     Settings: 'Broker credentials stay in .env on the server; the browser can only see source availability.',
   };
   return descriptions[activeNav] ?? 'The backtest workspace is the primary wired module right now.';
+}
+
+function sourceWorkbenchDefaults(source: SourceWorkbenchSource): SourceWorkbenchForm {
+  if (source === 'sample') {
+    return { source, symbol: 'ES', timeframe: '1min', from: '2025-01-02', to: '2025-01-02', detailFlag: 'ALL' };
+  }
+  if (source === 'coinbase') {
+    return { source, symbol: 'BTC-USD', timeframe: '1d', from: '2025-01-02', to: '2025-01-31', detailFlag: 'ALL' };
+  }
+  if (source === 'yahoo') {
+    return { source, symbol: 'AAPL', timeframe: '1d', from: '2025-01-02', to: '2025-01-31', detailFlag: 'ALL' };
+  }
+  if (source === 'tradovate') {
+    return { source, symbol: 'ES', timeframe: '1min', from: '2025-01-02', to: '2025-01-02', detailFlag: 'ALL' };
+  }
+  if (source === 'polygon') {
+    return { source, symbol: 'AAPL', timeframe: '1d', from: '2025-01-02', to: '2025-01-10', detailFlag: 'ALL' };
+  }
+  if (source === 'etrade_market_data') {
+    return { source, symbol: 'AAPL', timeframe: '1d', from: '2025-01-02', to: '2025-01-31', detailFlag: 'ALL' };
+  }
+  return { source, symbol: 'AAPL', timeframe: '1d', from: '2025-01-02', to: '2025-01-31', detailFlag: 'ALL' };
+}
+
+function sourceWorkbenchParams(form: SourceWorkbenchForm) {
+  return new URLSearchParams({
+    source: form.source,
+    symbol: form.symbol,
+    timeframe: form.timeframe,
+    from: form.from,
+    to: form.to,
+  });
 }
 
 function formatSigned(value: number) {

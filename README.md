@@ -222,7 +222,7 @@ The dashboard also includes a `Settings` module for broker and market-data crede
 Additional dashboard modules:
 
 - `Live Data` — E*TRADE OAuth connect, quote fetch, quote collection, and saved snapshot list.
-- `Data Sources` — source readiness cards, row counts, sample previews, probe errors, the full source-check matrix, default collection, cached dataset list, and candle-row preview.
+- `Data Sources` — source readiness cards, row counts, sample previews, probe errors, the full source-check matrix, default collection, custom source workbench, cached dataset list, and candle-row preview.
 - `Backtest` — includes a `Collect candles` action that stores the selected provider/date range into the local cache.
 - `Paper Trade` — forward paper sessions, live quote marks, manual test marks, and equity/PnL history.
 - `Options` — simulation-only options payoff strategy replay.

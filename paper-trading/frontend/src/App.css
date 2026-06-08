@@ -942,6 +942,15 @@ button {
   gap: 10px;
 }
 
+.source-workbench-grid {
+  align-items: end;
+}
+
+.workbench-quote-result {
+  display: grid;
+  gap: 12px;
+}
+
 .collection-result {
   display: grid;
   gap: 7px;
