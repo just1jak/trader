@@ -83,6 +83,9 @@ All paper-trading API routes are mounted under `/api/v1`.
 - `GET /api/v1/market/candles/cache`
   - Lists cached candle datasets and row counts.
 
+- `GET /api/v1/market/candles/cache/preview`
+  - Returns a limited row preview for one cached dataset so the frontend can show the actual stored OHLCV rows.
+
 ### Data Source Diagnostics
 
 - `GET /api/v1/data/sources`
@@ -96,6 +99,10 @@ All paper-trading API routes are mounted under `/api/v1`.
   - Returns `pass`, `warning`, `blocked`, or `fail` per source plus a summary of blocked or failed providers.
   - E*TRADE, Tradovate, and Polygon report `blocked` until valid credentials are saved and accepted by those providers.
   - This route verifies source access only. It does not place trades, clear credentials, or write new candle rows.
+
+- `POST /api/v1/data/collect-defaults`
+  - Seeds safe starter datasets into local storage: sample ES, Coinbase BTC-USD, Yahoo AAPL, configured Tradovate/Polygon candles, and an E*TRADE AAPL quote snapshot when OAuth is valid.
+  - Returns per-source `collected`, `empty`, `blocked`, or `failed` results and leaves public/local sources cached even when credentialed providers are not ready.
 
 ### E*TRADE Market Data
 
@@ -215,7 +222,7 @@ The dashboard also includes a `Settings` module for broker and market-data crede
 Additional dashboard modules:
 
 - `Live Data` — E*TRADE OAuth connect, quote fetch, quote collection, and saved snapshot list.
-- `Data Sources` — source readiness cards, row counts, sample previews, probe errors, and the full source-check matrix.
+- `Data Sources` — source readiness cards, row counts, sample previews, probe errors, the full source-check matrix, default collection, cached dataset list, and candle-row preview.
 - `Backtest` — includes a `Collect candles` action that stores the selected provider/date range into the local cache.
 - `Paper Trade` — forward paper sessions, live quote marks, manual test marks, and equity/PnL history.
 - `Options` — simulation-only options payoff strategy replay.

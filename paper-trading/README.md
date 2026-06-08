@@ -57,6 +57,7 @@ Docker compose mounts `.env` into the backend container so Settings changes pers
 
 - `Data Sources`: shows which sources are configured, whether probes succeed, how many local rows exist, the latest sample/error returned by each provider, and source-specific next steps.
 - `Data Sources` also includes `Full check`, which calls `/api/v1/data/smoke-test` for a read-only source verification matrix. Passing sources are currently usable; blocked sources need credentials or a fresh provider authorization.
+- `Data Sources` includes `Collect defaults`, which seeds safe local data: sample ES, Coinbase BTC-USD, Yahoo AAPL, and any configured Tradovate, Polygon, or E*TRADE source. It also shows cached datasets and a candle-row preview so you can confirm what was actually stored.
 - `Backtest`: choose a provider/date range and use `Collect candles` to store OHLCV bars locally. Coinbase crypto candles, Yahoo Finance stock candles, and the sample CSV work without API keys. Use `Cached candles` as the source to replay stored data without another provider call.
 - `Live Data`: save E*TRADE consumer credentials in `Settings`, click `Connect E*TRADE`, paste the verifier code, then fetch or collect quote snapshots. Collected snapshots are stored in `data/market_data.sqlite`.
 - `Paper Trade`: create a forward paper session, then mark it from an E*TRADE live quote or a manual price. Sessions track simulated position, cash, equity, and PnL over time. This is paper-only mark-to-market validation and does not place orders.

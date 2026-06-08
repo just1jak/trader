@@ -154,6 +154,64 @@ type SourceSmokeResult = {
   message: string;
 };
 
+type SourceCollectionItem = {
+  key: string;
+  label: string;
+  status: 'collected' | 'empty' | 'blocked' | 'failed';
+  rows: number;
+  detail: string;
+  action: string;
+  request: Record<string, unknown>;
+  preview: Record<string, unknown>;
+};
+
+type SourceCollectionResponse = {
+  results: SourceCollectionItem[];
+  summary: {
+    collected: number;
+    empty: number;
+    blocked: number;
+    failed: number;
+    total: number;
+    ready: boolean;
+  };
+  cache: CandleCacheResponse;
+  snapshots: LiveSnapshot[];
+  message: string;
+};
+
+type CacheDataset = {
+  source: string;
+  symbol: string;
+  timeframe: string;
+  rows: number;
+  first_timestamp: string;
+  last_timestamp: string;
+  last_collected_at: string;
+};
+
+type CandleRecord = {
+  timestamp?: string;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  volume?: number;
+};
+
+type CandleCacheResponse = {
+  rows: number;
+  datasets: CacheDataset[];
+};
+
+type CachePreview = {
+  source: string;
+  symbol: string;
+  timeframe: string;
+  rows: number;
+  candles: CandleRecord[];
+};
+
 type PaperStrategy = 'forward_long' | 'forward_short' | 'observe_only';
 
 type PaperForm = {
@@ -500,6 +558,11 @@ function App() {
   const [sourceProbeMessage, setSourceProbeMessage] = useState('Source diagnostics have not been probed yet.');
   const [sourceSmokeResult, setSourceSmokeResult] = useState<SourceSmokeResult | null>(null);
   const [sourceSmokeMessage, setSourceSmokeMessage] = useState('Full source check has not been run yet.');
+  const [sourceCollectResults, setSourceCollectResults] = useState<SourceCollectionItem[]>([]);
+  const [sourceCollectMessage, setSourceCollectMessage] = useState('No collection run yet.');
+  const [cacheRows, setCacheRows] = useState(0);
+  const [cacheDatasets, setCacheDatasets] = useState<CacheDataset[]>([]);
+  const [cachePreview, setCachePreview] = useState<CachePreview | null>(null);
   const [providerSettings, setProviderSettings] = useState<ProviderSettings[]>([]);
   const [providerForms, setProviderForms] = useState<Record<string, Record<string, string>>>({});
   const [savingProvider, setSavingProvider] = useState<string | null>(null);
@@ -568,6 +631,7 @@ function App() {
         callApi<ApiHealth>('/api/v1/health'),
         callApi<{ strategies: Array<{ key: string; label: string }> }>('/api/v1/strategies'),
         loadSourceDiagnostics(false),
+        loadCandleCache(),
         loadProviderSettings(),
         loadLiveSnapshots(),
         loadPaperSessions(),
@@ -687,6 +751,7 @@ function App() {
     if (data?.saved) {
       setLastAction(`Cached ${data.saved.inserted_or_updated} ${data.source} candles`);
       loadSourceDiagnostics(false);
+      loadCandleCache();
     }
   };
 
@@ -738,6 +803,51 @@ function App() {
       setSourceSmokeMessage(
         `Full check: ${data.summary.pass} pass, ${data.summary.blocked} blocked, ${data.summary.fail} fail, ${data.summary.warning} warning.`,
       );
+    }
+    return data;
+  };
+
+  const collectDefaultData = async () => {
+    setSourceCollectMessage('Collecting safe default datasets...');
+    const data = await callApi<SourceCollectionResponse>('/api/v1/data/collect-defaults', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    if (data?.summary) {
+      setSourceCollectResults(data.results);
+      setSourceCollectMessage(
+        `Collection: ${data.summary.collected} collected, ${data.summary.blocked} blocked, ${data.summary.failed} failed, ${data.summary.empty} empty.`,
+      );
+      setCacheRows(data.cache.rows);
+      setCacheDatasets(data.cache.datasets ?? []);
+      if (data.snapshots) setLiveSnapshots(data.snapshots);
+      await loadSourceDiagnostics(false);
+    }
+    return data;
+  };
+
+  const loadCandleCache = async () => {
+    const data = await callApi<CandleCacheResponse>('/api/v1/market/candles/cache');
+    if (data) {
+      setCacheRows(data.rows);
+      setCacheDatasets(data.datasets ?? []);
+    }
+    return data;
+  };
+
+  const previewCacheDataset = async (dataset: CacheDataset) => {
+    const params = new URLSearchParams({
+      source: dataset.source,
+      symbol: dataset.symbol,
+      timeframe: dataset.timeframe,
+      from: dataset.first_timestamp,
+      to: dataset.last_timestamp,
+      limit: '10',
+    });
+    const data = await callApi<CachePreview>(`/api/v1/market/candles/cache/preview?${params.toString()}`);
+    if (data) {
+      setCachePreview(data);
+      setLastAction(`Previewing ${data.rows} cached ${data.symbol} candles`);
     }
     return data;
   };
@@ -1158,13 +1268,21 @@ function App() {
             selectPaperSession={selectPaperSession}
             sourceDiagnostics={sourceDiagnostics}
             sourceProbeMessage={sourceProbeMessage}
+            sourceCollectMessage={sourceCollectMessage}
+            sourceCollectResults={sourceCollectResults}
             sourceSmokeMessage={sourceSmokeMessage}
             sourceSmokeResult={sourceSmokeResult}
+            cacheDatasets={cacheDatasets}
+            cachePreview={cachePreview}
+            cacheRows={cacheRows}
+            collectDefaultData={collectDefaultData}
             startEtradeOAuth={startEtradeOAuth}
             updateOptionField={updateOptionField}
             updatePaperField={updatePaperField}
             updateProviderField={updateProviderField}
             loadSourceDiagnostics={loadSourceDiagnostics}
+            loadCandleCache={loadCandleCache}
+            previewCacheDataset={previewCacheDataset}
             runSourceSmokeTest={runSourceSmokeTest}
           />
         ) : (
@@ -1401,13 +1519,21 @@ function ModulePanel({
   selectPaperSession,
   sourceDiagnostics,
   sourceProbeMessage,
+  sourceCollectMessage,
+  sourceCollectResults,
   sourceSmokeMessage,
   sourceSmokeResult,
+  cacheDatasets,
+  cachePreview,
+  cacheRows,
+  collectDefaultData,
   startEtradeOAuth,
   updateOptionField,
   updatePaperField,
   updateProviderField,
   loadSourceDiagnostics,
+  loadCandleCache,
+  previewCacheDataset,
   runSourceSmokeTest,
 }: {
   activeNav: string;
@@ -1453,13 +1579,21 @@ function ModulePanel({
   selectPaperSession: (sessionId: number) => void;
   sourceDiagnostics: SourceDiagnostic[];
   sourceProbeMessage: string;
+  sourceCollectMessage: string;
+  sourceCollectResults: SourceCollectionItem[];
   sourceSmokeMessage: string;
   sourceSmokeResult: SourceSmokeResult | null;
+  cacheDatasets: CacheDataset[];
+  cachePreview: CachePreview | null;
+  cacheRows: number;
+  collectDefaultData: () => void;
   startEtradeOAuth: () => void;
   updateOptionField: (field: keyof OptionsForm, value: string) => void;
   updatePaperField: (field: keyof PaperForm, value: string) => void;
   updateProviderField: (providerKey: string, fieldKey: string, value: string) => void;
   loadSourceDiagnostics: (probe?: boolean) => void;
+  loadCandleCache: () => void;
+  previewCacheDataset: (dataset: CacheDataset) => void;
   runSourceSmokeTest: () => void;
 }) {
   const routeEntries = apiHealth ? Object.entries(apiHealth.routes) : [];
@@ -1623,6 +1757,97 @@ function ModulePanel({
                 </>
               ) : (
                 <p>Run the full check to verify public candles, local cache replay, congressional data, and each configured provider probe.</p>
+              )}
+            </article>
+
+            <article className="module-card is-wide">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Collect starter data</h3>
+                  <p>{sourceCollectMessage}</p>
+                </div>
+                <strong className={cacheRows ? 'module-status-ok' : 'module-status-warn'}>
+                  {cacheRows.toLocaleString()} cached rows
+                </strong>
+              </div>
+              <div className="action-row">
+                <button className="run-button" type="button" onClick={collectDefaultData}>
+                  <DownloadIcon />
+                  Collect defaults
+                </button>
+                <button className="reset-button" type="button" onClick={loadCandleCache}>
+                  <DatabaseIcon />
+                  Refresh cache
+                </button>
+              </div>
+              {sourceCollectResults.length ? (
+                <div className="collection-grid">
+                  {sourceCollectResults.map((result) => (
+                    <div className={`collection-result is-${result.status}`} key={result.key}>
+                      <strong>{result.label}</strong>
+                      <em>{result.status}</em>
+                      <span>{result.rows.toLocaleString()} rows</span>
+                      <p>{result.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p>Collect defaults seeds Sample CSV, Coinbase BTC-USD, Yahoo AAPL, and any configured Tradovate, Polygon, or E*TRADE source into local storage.</p>
+              )}
+            </article>
+
+            <article className="module-card is-wide">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Cached candle datasets</h3>
+                  <p>Replay these with Data source set to Cached candles.</p>
+                </div>
+                <strong className={cacheDatasets.length ? 'module-status-ok' : 'module-status-warn'}>
+                  {cacheDatasets.length} datasets
+                </strong>
+              </div>
+              {cacheDatasets.length ? (
+                <>
+                  <ul className="cache-dataset-list">
+                    {cacheDatasets.map((dataset) => (
+                      <li key={`${dataset.source}-${dataset.symbol}-${dataset.timeframe}`}>
+                        <span>{dataset.source} · {dataset.symbol} · {dataset.timeframe}</span>
+                        <strong>{dataset.rows.toLocaleString()} rows</strong>
+                        <button className="reset-button" type="button" onClick={() => previewCacheDataset(dataset)}>
+                          Preview
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {cachePreview ? (
+                    <div className="cache-preview-table">
+                      <div className="cache-preview-heading">
+                        <strong>{cachePreview.symbol} cached candles</strong>
+                        <span>{cachePreview.rows.toLocaleString()} total rows</span>
+                      </div>
+                      <div className="cache-preview-grid">
+                        <span>Time</span>
+                        <span>Open</span>
+                        <span>High</span>
+                        <span>Low</span>
+                        <span>Close</span>
+                        <span>Volume</span>
+                        {cachePreview.candles.map((candle, index) => (
+                          <React.Fragment key={`${candle.timestamp}-${index}`}>
+                            <strong>{String(candle.timestamp ?? 'n/a')}</strong>
+                            <strong>{formatNumber(candle.open)}</strong>
+                            <strong>{formatNumber(candle.high)}</strong>
+                            <strong>{formatNumber(candle.low)}</strong>
+                            <strong>{formatNumber(candle.close)}</strong>
+                            <strong>{formatNumber(candle.volume)}</strong>
+                          </React.Fragment>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <p>No cached candles yet. Collect defaults or use Collect candles on the Backtest page.</p>
               )}
             </article>
 
@@ -2526,6 +2751,14 @@ function formatCurrency(value: number) {
 
 function formatOptionalPrice(value: number | null) {
   return typeof value === 'number' && Number.isFinite(value) ? formatCurrency(value) : 'n/a';
+}
+
+function formatNumber(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 'n/a';
+  return parsed.toLocaleString(undefined, {
+    maximumFractionDigits: Math.abs(parsed) >= 1000 ? 0 : 4,
+  });
 }
 
 function toFixed(value: unknown) {

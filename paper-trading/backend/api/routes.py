@@ -98,6 +98,10 @@ candle_collect_input = api.model('CandleCollectInput', {
     'source': fields.String(required=True, description='Provider to collect from: sample, coinbase, yahoo, tradovate, or polygon'),
 })
 
+source_collect_defaults_input = api.model('SourceCollectDefaultsInput', {
+    'sources': fields.List(fields.String, required=False, description='Optional source keys to collect; defaults to every known source'),
+})
+
 paper_session_input = api.model('PaperSessionInput', {
     'name': fields.String(required=False, description='Session name'),
     'symbol': fields.String(required=True, description='Symbol to forward test, e.g., AAPL'),
@@ -144,10 +148,12 @@ class HealthResource(Resource):
             'routes': {
                 'data_sources': '/api/v1/data/sources',
                 'data_smoke_test': '/api/v1/data/smoke-test',
+                'data_collect_defaults': '/api/v1/data/collect-defaults',
                 'backtest': '/api/v1/backtest',
                 'backtest_data': '/api/v1/market/backtest-data',
                 'collect_candles': '/api/v1/market/candles/collect',
                 'candle_cache': '/api/v1/market/candles/cache',
+                'candle_cache_preview': '/api/v1/market/candles/cache/preview',
                 'etrade_oauth_start': '/api/v1/etrade/oauth/start',
                 'etrade_live_quote': '/api/v1/etrade/live/quote',
                 'etrade_collect_quote': '/api/v1/etrade/live/collect',
@@ -351,6 +357,25 @@ class DataSmokeTestResource(Resource):
         }, 200
 
 
+@api.route('/data/collect-defaults')
+class DataCollectDefaultsResource(Resource):
+    @api.expect(source_collect_defaults_input)
+    @api.response(200, 'Collection attempted')
+    def post(self):
+        payload = api.payload or {}
+        results = _collect_default_sources(payload.get('sources'))
+        return {
+            'results': results,
+            'summary': _collection_summary(results),
+            'cache': {
+                'rows': cache_row_count(),
+                'datasets': candle_cache_summary(),
+            },
+            'snapshots': list_market_snapshots(limit=10),
+            'message': 'Default data collection attempted. Credentialed providers may remain blocked until Settings are complete.',
+        }, 200
+
+
 @api.route('/paper/sessions')
 class PaperSessionCollectionResource(Resource):
     @api.response(200, 'Success')
@@ -515,6 +540,31 @@ class CandleCacheResource(Resource):
             'rows': cache_row_count(),
             'datasets': candle_cache_summary(request.args.get('limit', 20)),
         }, 200
+
+
+@api.route('/market/candles/cache/preview')
+class CandleCachePreviewResource(Resource):
+    @api.response(200, 'Success')
+    @api.response(400, 'Validation Error')
+    def get(self):
+        limit = _bounded_int(request.args.get('limit'), default=10, minimum=1, maximum=100)
+        try:
+            candles = load_cached_candles(
+                symbol=request.args.get('symbol'),
+                timeframe=request.args.get('timeframe'),
+                start=request.args.get('from') or request.args.get('start'),
+                end=request.args.get('to') or request.args.get('end'),
+                source=request.args.get('source'),
+            )
+            return {
+                'source': request.args.get('source'),
+                'symbol': request.args.get('symbol'),
+                'timeframe': request.args.get('timeframe'),
+                'rows': len(candles),
+                'candles': candles_to_records(candles.head(limit)),
+            }, 200
+        except ValueError as exc:
+            return {'error': str(exc)}, 400
 
 
 @api.route('/market/candles/collect')
@@ -1157,6 +1207,180 @@ def _smoke_item(key, label, category, status, rows=0, detail='', action='', expe
     }
 
 
+def _collect_default_sources(requested_sources=None):
+    requested = {str(source).strip() for source in (requested_sources or []) if str(source).strip()}
+    candle_jobs = [
+        {
+            'key': 'sample',
+            'label': 'Sample CSV',
+            'source': 'sample',
+            'symbol': 'ES',
+            'timeframe': '1min',
+            'from': '2025-01-02',
+            'to': '2025-01-02',
+        },
+        {
+            'key': 'coinbase',
+            'label': 'Coinbase BTC-USD',
+            'source': 'coinbase',
+            'symbol': 'BTC-USD',
+            'timeframe': '1d',
+            'from': '2025-01-02',
+            'to': '2025-01-31',
+        },
+        {
+            'key': 'yahoo',
+            'label': 'Yahoo Finance AAPL',
+            'source': 'yahoo',
+            'symbol': 'AAPL',
+            'timeframe': '1d',
+            'from': '2025-01-02',
+            'to': '2025-01-31',
+        },
+        {
+            'key': 'tradovate',
+            'label': 'Tradovate ES',
+            'source': 'tradovate',
+            'symbol': 'ES',
+            'timeframe': '1min',
+            'from': '2025-01-02',
+            'to': '2025-01-02',
+        },
+        {
+            'key': 'polygon',
+            'label': 'Polygon AAPL',
+            'source': 'polygon',
+            'symbol': 'AAPL',
+            'timeframe': '1d',
+            'from': '2025-01-02',
+            'to': '2025-01-10',
+        },
+    ]
+    results = []
+    for job in candle_jobs:
+        if requested and job['key'] not in requested:
+            continue
+        results.append(_collect_candle_default(job))
+
+    if not requested or 'etrade_market_data' in requested or 'etrade' in requested:
+        results.append(_collect_etrade_default_quote())
+
+    return results
+
+
+def _collect_candle_default(job):
+    provider_key = job['source']
+    if provider_key in {'tradovate', 'polygon'} and not _provider_configured(provider_key):
+        return _collection_item(
+            key=job['key'],
+            label=job['label'],
+            status='blocked',
+            detail=f"{job['label']} needs credentials in Settings before collection.",
+            action='Save provider credentials, run Full check, then collect defaults again.',
+            request=job,
+        )
+
+    try:
+        candles = _load_backtest_candles(job)
+        saved = save_cached_candles(
+            source=job['source'],
+            symbol=job['symbol'],
+            timeframe=job['timeframe'],
+            candles=candles,
+        )
+        rows = len(candles)
+        return _collection_item(
+            key=job['key'],
+            label=job['label'],
+            status='collected' if rows else 'empty',
+            rows=rows,
+            detail=f"Cached {saved.get('inserted_or_updated', 0)} rows for {job['symbol']} {job['timeframe']}.",
+            action='Use Cached candles to replay this dataset without another provider request.',
+            request=job,
+            preview=_candle_preview(candles),
+        )
+    except Exception as exc:
+        return _collection_item(
+            key=job['key'],
+            label=job['label'],
+            status='failed',
+            detail=_safe_error(exc),
+            action='Check provider credentials, provider availability, symbol, and date range before retrying.',
+            request=job,
+        )
+
+
+def _collect_etrade_default_quote():
+    if not _provider_configured('etrade'):
+        return _collection_item(
+            key='etrade_market_data',
+            label='E*TRADE AAPL quote',
+            status='blocked',
+            detail='E*TRADE OAuth is not fully configured.',
+            action='Save consumer key/secret, connect OAuth in Live Data, then collect defaults again.',
+            request={'symbols': 'AAPL', 'detailFlag': 'ALL'},
+        )
+
+    try:
+        detail_flag = 'ALL'
+        data = ETradeClient().get_quote('AAPL', detail_flag=detail_flag)
+        summary = summarize_quote_payload(data)
+        snapshot = save_market_snapshot(
+            snapshot_type='quote',
+            symbol='AAPL',
+            request_params={'symbols': 'AAPL', 'detailFlag': detail_flag, 'source': 'data_collect_defaults'},
+            response_payload=data,
+        )
+        return _collection_item(
+            key='etrade_market_data',
+            label='E*TRADE AAPL quote',
+            status='collected' if summary else 'empty',
+            rows=len(summary),
+            detail=f"Saved E*TRADE quote snapshot {snapshot.get('id')}.",
+            action='View the saved quote snapshot in Live Data.',
+            request={'symbols': 'AAPL', 'detailFlag': detail_flag},
+            preview=summary[0] if summary else {},
+        )
+    except Exception as exc:
+        return _collection_item(
+            key='etrade_market_data',
+            label='E*TRADE AAPL quote',
+            status='failed',
+            detail=_safe_error(exc),
+            action='Reconnect OAuth in Live Data and confirm sandbox/live mode before retrying.',
+            request={'symbols': 'AAPL', 'detailFlag': 'ALL'},
+        )
+
+
+def _collection_summary(results):
+    counts = {
+        'collected': 0,
+        'empty': 0,
+        'blocked': 0,
+        'failed': 0,
+    }
+    for result in results:
+        counts[result['status']] = counts.get(result['status'], 0) + 1
+    return {
+        **counts,
+        'total': len(results),
+        'ready': counts.get('failed', 0) == 0 and counts.get('blocked', 0) == 0,
+    }
+
+
+def _collection_item(key, label, status, rows=0, detail='', action='', request=None, preview=None):
+    return {
+        'key': key,
+        'label': label,
+        'status': status,
+        'rows': rows,
+        'detail': detail,
+        'action': action,
+        'request': _json_ready(request or {}),
+        'preview': _json_ready(preview or {}),
+    }
+
+
 def _source_item(key, label, configured, status, rows=0, detail='', preview=None, next_steps=None):
     return {
         'key': key,
@@ -1256,6 +1480,14 @@ def _to_bool(value, default=False):
     if value is None:
         return default
     return str(value).lower() in {'1', 'true', 'yes', 'y'}
+
+
+def _bounded_int(value, default, minimum, maximum):
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(parsed, maximum))
 
 
 def _provider_configured(provider_key):

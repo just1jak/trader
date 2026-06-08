@@ -50,6 +50,12 @@ All routes are mounted under `/api/v1`.
   - Public and local checks can pass without credentials. E*TRADE, Tradovate, and Polygon return `blocked` until their required Settings values are saved and accepted by the provider.
   - This endpoint does not place trades, submit orders, clear credentials, or write candle rows.
 
+- `POST /data/collect-defaults`
+  - Collects safe starter datasets into local storage and returns a per-source result matrix.
+  - Default OHLCV cache jobs: sample ES 1-minute candles, Coinbase BTC-USD daily candles, Yahoo AAPL daily candles, Tradovate ES candles when configured, and Polygon AAPL candles when configured.
+  - E*TRADE is collected as an AAPL quote snapshot, not historical candles, because the wired E*TRADE layer is quote/options-chain data.
+  - Missing or rejected credentialed providers report `blocked` or `failed` without preventing public/local sources from being cached.
+
 ## Candle Cache
 
 - `POST /market/candles/collect`
@@ -59,6 +65,10 @@ All routes are mounted under `/api/v1`.
 
 - `GET /market/candles/cache`
   - Lists cached datasets by source, symbol, timeframe, row count, date range, and last collection time.
+
+- `GET /market/candles/cache/preview`
+  - Returns a limited row preview for one cached dataset.
+  - Query params: `source`, `symbol`, `timeframe`, `from`, `to`, and optional `limit`.
 
 ## E*TRADE Market Data
 
