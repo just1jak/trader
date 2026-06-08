@@ -5,6 +5,12 @@ import pandas as pd
 
 from utils.backtest import run_backtest
 from utils.backtest_data import candles_to_records, load_sample_candles
+from utils.candle_cache import (
+    cache_row_count,
+    candle_cache_summary,
+    load_cached_candles,
+    save_cached_candles,
+)
 from utils.congressional import list_congressional_trades, run_congressional_backtest
 from utils.congressional_ingest_bridge import sync_congressional_disclosures
 from utils.etrade import ETradeClient, ETradeConfigError
@@ -46,7 +52,7 @@ backtest_input = api.model('BacktestInput', {
     'timeframe': fields.String(required=True, description='Candle size, e.g., 1min, 5min, 1h'),
     'strategy': fields.String(required=True, description='Strategy module name'),
     'params': fields.Raw(required=True, description='Strategy parameters as JSON object'),
-    'source': fields.String(required=False, description='sample, tradovate, or polygon', default='sample'),
+    'source': fields.String(required=False, description='sample, tradovate, polygon, or cache', default='sample'),
 })
 
 options_backtest_input = api.model('OptionsBacktestInput', {
@@ -54,7 +60,7 @@ options_backtest_input = api.model('OptionsBacktestInput', {
     'from': fields.String(required=True, description='Start date (YYYY-MM-DD)'),
     'to': fields.String(required=True, description='End date (YYYY-MM-DD)'),
     'timeframe': fields.String(required=False, description='Candle size', default='1min'),
-    'source': fields.String(required=False, description='sample, tradovate, or polygon', default='sample'),
+    'source': fields.String(required=False, description='sample, tradovate, polygon, or cache', default='sample'),
     'option_type': fields.String(required=True, description='CALL or PUT'),
     'strike': fields.Float(required=True, description='Option strike'),
     'premium': fields.Float(required=True, description='Entry premium per contract'),
@@ -76,6 +82,14 @@ etrade_oauth_complete_input = api.model('ETradeOAuthCompleteInput', {
 etrade_collect_input = api.model('ETradeCollectInput', {
     'symbols': fields.String(required=True, description='Comma-separated symbols to quote'),
     'detailFlag': fields.String(required=False, description='E*TRADE quote detail flag', default='ALL'),
+})
+
+candle_collect_input = api.model('CandleCollectInput', {
+    'symbol': fields.String(required=True, description='Symbol to collect, e.g., ES or AAPL'),
+    'from': fields.String(required=True, description='Start date (YYYY-MM-DD)'),
+    'to': fields.String(required=True, description='End date (YYYY-MM-DD)'),
+    'timeframe': fields.String(required=True, description='Candle size, e.g., 1min, 5min, 1h, 1d'),
+    'source': fields.String(required=True, description='Provider to collect from: sample, tradovate, or polygon'),
 })
 
 paper_session_input = api.model('PaperSessionInput', {
@@ -117,11 +131,14 @@ class HealthResource(Resource):
                 'tradovate': _provider_configured('tradovate'),
                 'etrade_market_data': _provider_configured('etrade'),
                 'polygon': _provider_configured('polygon'),
+                'cache': cache_row_count() > 0,
             },
             'routes': {
                 'data_sources': '/api/v1/data/sources',
                 'backtest': '/api/v1/backtest',
                 'backtest_data': '/api/v1/market/backtest-data',
+                'collect_candles': '/api/v1/market/candles/collect',
+                'candle_cache': '/api/v1/market/candles/cache',
                 'etrade_oauth_start': '/api/v1/etrade/oauth/start',
                 'etrade_live_quote': '/api/v1/etrade/live/quote',
                 'etrade_collect_quote': '/api/v1/etrade/live/collect',
@@ -431,7 +448,7 @@ class BacktestDataResource(Resource):
         if source == 'etrade':
             return {
                 'error': 'E*TRADE market APIs provide quote and option-chain snapshots here, not historical OHLCV candles.',
-                'available_sources': ['sample', 'tradovate', 'polygon'],
+                'available_sources': ['sample', 'tradovate', 'polygon', 'cache'],
             }, 400
 
         try:
@@ -448,6 +465,52 @@ class BacktestDataResource(Resource):
                 'timeframe': timeframe,
                 'rows': len(candles),
                 'candles': candles_to_records(candles),
+            }, 200
+        except ValueError as exc:
+            return {'error': str(exc)}, 400
+        except (TradovateConfigError, PolygonConfigError) as exc:
+            return {'error': str(exc)}, 400
+
+
+@api.route('/market/candles/cache')
+class CandleCacheResource(Resource):
+    @api.response(200, 'Success')
+    def get(self):
+        return {
+            'rows': cache_row_count(),
+            'datasets': candle_cache_summary(request.args.get('limit', 20)),
+        }, 200
+
+
+@api.route('/market/candles/collect')
+class CandleCollectResource(Resource):
+    @api.expect(candle_collect_input)
+    @api.response(200, 'Candles collected')
+    @api.response(400, 'Validation Error')
+    def post(self):
+        payload = api.payload or {}
+        source = payload.get('source', 'sample')
+        if source in {'cache', 'etrade'}:
+            return {'error': f'Cannot collect candles from source={source}.'}, 400
+        try:
+            candles = _load_backtest_candles(payload)
+            saved = save_cached_candles(
+                source=source,
+                symbol=payload.get('symbol'),
+                timeframe=payload.get('timeframe'),
+                candles=candles,
+            )
+            return {
+                'saved': saved,
+                'source': source,
+                'symbol': payload.get('symbol'),
+                'timeframe': payload.get('timeframe'),
+                'rows': len(candles),
+                'preview': _json_ready(_candle_preview(candles)),
+                'cache': {
+                    'rows': cache_row_count(),
+                    'datasets': candle_cache_summary(),
+                },
             }, 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
@@ -705,6 +768,18 @@ def _data_source_status(probe=False):
             detail='Configured. Run a probe to verify aggregate-bar access.',
         ))
 
+    cache_rows = cache_row_count()
+    cache_summary = candle_cache_summary(limit=1)
+    sources.append(_source_item(
+        key='cache',
+        label='Cached candles',
+        configured=True,
+        status='ok' if cache_rows else 'empty',
+        rows=cache_rows,
+        detail='Local OHLCV candle cache populated by the collect-candles route.',
+        preview=cache_summary[0] if cache_summary else {},
+    ))
+
     congressional = list_congressional_trades(limit=5)
     total = congressional.get('total', 0)
     sources.append(_source_item(
@@ -771,6 +846,16 @@ def _load_backtest_candles(payload):
             start=payload.get('from'),
             end=payload.get('to'),
         )
+    if source == 'cache':
+        candles = load_cached_candles(
+            symbol=payload.get('symbol', 'AAPL'),
+            timeframe=payload.get('timeframe', '1d'),
+            start=payload.get('from'),
+            end=payload.get('to'),
+        )
+        if candles.empty:
+            raise ValueError('No cached candles found for the requested symbol, timeframe, and date range.')
+        return candles
     raise ValueError(f'Unsupported backtest data source: {source}')
 
 

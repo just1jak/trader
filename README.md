@@ -29,6 +29,7 @@ workflows. Live order execution is intentionally not wired here.
 - Read-only E*TRADE quote and options-chain API layer
 - E*TRADE OAuth connect flow and snapshot collection store
 - Data-source diagnostics API and dashboard page
+- Local OHLCV candle cache with collect/replay routes
 - Forward paper-trading sessions marked from live quotes or manual prices
 - Simulation-only options strategy payoff backtester
 - Official House PTR disclosure importer and congressional replay endpoint
@@ -41,12 +42,13 @@ workflows. Live order execution is intentionally not wired here.
 - `paper-trading/` — simulation backend + UI
 - `paper-trading/API.md` — detailed API wiring notes
 - `paper-trading/data/sample_ES_1min.csv` — local sample ES candles
-- `paper-trading/data/market_data.sqlite` — local E*TRADE quote snapshot store
+- `paper-trading/data/market_data.sqlite` — local E*TRADE quote snapshots and OHLCV candle cache
+- `paper-trading/backend/utils/candle_cache.py` — local OHLCV candle cache
 - `paper-trading/backend/api/routes.py` — Flask API routes
 - `paper-trading/backend/utils/etrade.py` — read-only E*TRADE OAuth market client
 - `paper-trading/backend/utils/etrade_collection.py` — E*TRADE quote snapshot storage and summaries
 - `paper-trading/backend/utils/polygon.py` — Polygon historical aggregate client
-- `paper-trading/backend/utils/backtest_data.py` — sample/Tradovate candle loading
+- `paper-trading/backend/utils/backtest_data.py` — local sample candle loading
 - `paper-trading/backend/utils/options_backtest.py` — options payoff simulation
 - `paper-trading/frontend/src/App.tsx` — paper-trading dashboard
 
@@ -61,18 +63,26 @@ All paper-trading API routes are mounted under `/api/v1`.
   - `source=sample` uses `paper-trading/data/sample_ES_1min.csv`.
   - `source=tradovate` uses the existing Tradovate client.
   - `source=polygon` uses Polygon aggregate bars for stock symbols such as `AAPL`, `SPY`, and `QQQ`.
+  - `source=cache` replays previously collected OHLCV bars from `paper-trading/data/market_data.sqlite`.
   - `source=etrade` is intentionally not supported for historical candles because the wired E*TRADE layer exposes quote and option-chain snapshots, not historical OHLCV bars.
 
 - `GET /api/v1/market/backtest-data`
   - Returns candles for inspection before a run.
   - Query params: `symbol`, `timeframe`, `from`, `to`, `source`.
 
+- `POST /api/v1/market/candles/collect`
+  - Fetches candles from `sample`, `tradovate`, or `polygon` and stores them in the local candle cache.
+  - Body shape: `{ "source": "polygon", "symbol": "AAPL", "timeframe": "1d", "from": "2025-01-02", "to": "2025-01-10" }`.
+
+- `GET /api/v1/market/candles/cache`
+  - Lists cached candle datasets and row counts.
+
 ### Data Source Diagnostics
 
 - `GET /api/v1/data/sources`
   - Returns configured status, row counts, and a preview/error for each source.
   - Add `?probe=true` to make a lightweight test request against configured external providers.
-  - Current source keys: `sample`, `tradovate`, `etrade_market_data`, `polygon`, and `congress`.
+  - Current source keys: `sample`, `tradovate`, `etrade_market_data`, `polygon`, `cache`, and `congress`.
   - This route is the fastest way to confirm whether the dashboard has real usable data before trusting a backtest.
 
 ### E*TRADE Market Data
@@ -178,6 +188,7 @@ The React dashboard posts to `POST /api/v1/backtest` and includes a data-source 
 - `Sample CSV` — uses the local ES sample data and works without broker credentials.
 - `Tradovate` — uses the existing Tradovate historical-data client when credentials are configured.
 - `Polygon` — uses stock aggregate candles when a Polygon API key is configured.
+- `Cached candles` — replays OHLCV bars collected through the backtest `Collect candles` action.
 
 The dashboard also includes a `Settings` module for broker and market-data credentials:
 
@@ -190,6 +201,7 @@ Additional dashboard modules:
 
 - `Live Data` — E*TRADE OAuth connect, quote fetch, quote collection, and saved snapshot list.
 - `Data Sources` — source readiness cards, row counts, sample previews, and probe errors.
+- `Backtest` — includes a `Collect candles` action that stores the selected provider/date range into the local cache.
 - `Paper Trade` — forward paper sessions, live quote marks, manual test marks, and equity/PnL history.
 - `Options` — simulation-only options payoff strategy replay.
 - `Congress` — official House PTR sync, local congressional disclosure replay, and stored disclosure preview.
@@ -291,6 +303,7 @@ The production frontend is served by nginx. Browser requests to `/api/` are prox
 - Local sample candle loading and the options payoff simulation have been smoke-tested.
 - E*TRADE quote collection has been smoke-tested against the saved OAuth token; sandbox responses can be historical/canned, and expired tokens return a reconnect message.
 - Tradovate and Polygon fail cleanly with JSON setup errors when credentials are missing or rejected.
+- The candle cache has been smoke-tested by collecting sample ES candles and replaying a `source=cache` backtest.
 - Congressional House ingestion has been verified against the official 2026 Clerk ZIP/PDF path, and the local SQLite database now contains parsed House PTR rows. Senate eFD ingestion still needs a real parser/source before it should be trusted.
 - Frontend build has been verified with `npm run build`; the generated `dist/` folder is ignored for source control.
 

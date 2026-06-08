@@ -17,7 +17,7 @@ type BacktestForm = {
   timeframe: string;
   strategy: StrategyKey;
   params: Record<string, number | string | boolean>;
-  source: 'sample' | 'tradovate' | 'polygon';
+  source: 'sample' | 'tradovate' | 'polygon' | 'cache';
 };
 
 type Metric = {
@@ -171,7 +171,7 @@ type OptionsForm = {
   symbol: string;
   from: string;
   to: string;
-  source: 'sample' | 'tradovate' | 'polygon';
+  source: 'sample' | 'tradovate' | 'polygon' | 'cache';
   timeframe: string;
   strategy: 'long_call' | 'long_put' | 'bull_call_spread' | 'bear_put_spread' | 'long_straddle';
   option_type: 'CALL' | 'PUT';
@@ -606,6 +606,30 @@ function App() {
     if (data?.metrics) {
       setResults(normalizeApiResults(data));
       setLastAction(`Backtest completed from ${data.data_source ?? formData.source} data`);
+    }
+  };
+
+  const collectBacktestCandles = async () => {
+    if (formData.source === 'cache') {
+      setLastAction('Choose sample, Tradovate, or Polygon before collecting candles');
+      return;
+    }
+    const data = await callApi<{ saved: { rows: number; inserted_or_updated: number }; rows: number; source: string }>(
+      '/api/v1/market/candles/collect',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          source: formData.source,
+          symbol: formData.symbol,
+          timeframe: formData.timeframe,
+          from: formData.from,
+          to: formData.to,
+        }),
+      },
+    );
+    if (data?.saved) {
+      setLastAction(`Cached ${data.saved.inserted_or_updated} ${data.source} candles`);
+      loadSourceDiagnostics(false);
     }
   };
 
@@ -1077,6 +1101,7 @@ function App() {
                 <option value="sample">Sample CSV</option>
                 <option value="tradovate">Tradovate</option>
                 <option value="polygon">Polygon</option>
+                <option value="cache">Cached candles</option>
               </select>
             </Field>
 
@@ -1088,6 +1113,10 @@ function App() {
               <button className="reset-button" type="button" onClick={() => setFormData({ ...formData, params: defaultParams[formData.strategy] })}>
                 <ResetIcon />
                 Reset
+              </button>
+              <button className="reset-button" type="button" onClick={collectBacktestCandles} disabled={formData.source === 'cache'}>
+                <DatabaseIcon />
+                Collect candles
               </button>
             </div>
           </div>
@@ -1591,6 +1620,7 @@ function ModulePanel({
                     <option value="sample">Sample CSV</option>
                     <option value="tradovate">Tradovate</option>
                     <option value="polygon">Polygon</option>
+                    <option value="cache">Cached candles</option>
                   </select>
                 </label>
                 <label className="provider-field">
