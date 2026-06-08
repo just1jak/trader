@@ -17,7 +17,7 @@ type BacktestForm = {
   timeframe: string;
   strategy: StrategyKey;
   params: Record<string, number | string | boolean>;
-  source: 'sample' | 'tradovate';
+  source: 'sample' | 'tradovate' | 'polygon';
 };
 
 type Metric = {
@@ -93,10 +93,37 @@ type LiveSnapshot = {
   request: Record<string, string>;
 };
 
+type QuoteSummary = {
+  symbol: string;
+  security_type: string;
+  description: string;
+  quote_status: string;
+  datetime: string;
+  last: number | null;
+  bid: number | null;
+  ask: number | null;
+  change: number | null;
+  change_percent: number | null;
+  volume: number | null;
+  previous_close: number | null;
+  source_note: string;
+};
+
 type LiveQuoteResult = {
   symbols: string;
   detailFlag: string;
+  summary?: QuoteSummary[];
   data: unknown;
+};
+
+type SourceDiagnostic = {
+  key: string;
+  label: string;
+  configured: boolean;
+  status: 'ok' | 'ready' | 'empty' | 'error' | 'needs_config';
+  rows: number;
+  detail: string;
+  preview: Record<string, unknown>;
 };
 
 type PaperStrategy = 'forward_long' | 'forward_short' | 'observe_only';
@@ -144,7 +171,7 @@ type OptionsForm = {
   symbol: string;
   from: string;
   to: string;
-  source: 'sample' | 'tradovate';
+  source: 'sample' | 'tradovate' | 'polygon';
   timeframe: string;
   strategy: 'long_call' | 'long_put' | 'bull_call_spread' | 'bear_put_spread' | 'long_straddle';
   option_type: 'CALL' | 'PUT';
@@ -387,6 +414,7 @@ const sampleResults: BacktestResults = {
 const navItems = [
   { label: 'Backtest', icon: <TrendIcon /> },
   { label: 'Live Data', icon: <ChartIcon /> },
+  { label: 'Data Sources', icon: <DatabaseIcon /> },
   { label: 'Paper Trade', icon: <ClockIcon /> },
   { label: 'Options', icon: <GridIcon /> },
   { label: 'Congress', icon: <DocumentIcon /> },
@@ -415,6 +443,8 @@ function App() {
   const [apiHealth, setApiHealth] = useState<ApiHealth | null>(null);
   const [backendStrategies, setBackendStrategies] = useState<Array<{ key: string; label: string }>>([]);
   const [dataPreview, setDataPreview] = useState<DataPreview | null>(null);
+  const [sourceDiagnostics, setSourceDiagnostics] = useState<SourceDiagnostic[]>([]);
+  const [sourceProbeMessage, setSourceProbeMessage] = useState('Source diagnostics have not been probed yet.');
   const [providerSettings, setProviderSettings] = useState<ProviderSettings[]>([]);
   const [providerForms, setProviderForms] = useState<Record<string, Record<string, string>>>({});
   const [savingProvider, setSavingProvider] = useState<string | null>(null);
@@ -479,6 +509,7 @@ function App() {
       const [health, strategies] = await Promise.all([
         callApi<ApiHealth>('/api/v1/health'),
         callApi<{ strategies: Array<{ key: string; label: string }> }>('/api/v1/strategies'),
+        loadSourceDiagnostics(false),
         loadProviderSettings(),
         loadLiveSnapshots(),
         loadPaperSessions(),
@@ -508,9 +539,12 @@ function App() {
       return;
     }
     if (field === 'source') {
+      const source = value as BacktestForm['source'];
       setFormData((previous) => ({
         ...previous,
-        source: value as BacktestForm['source'],
+        source,
+        symbol: source === 'polygon' ? 'AAPL' : source === 'sample' ? 'ES' : previous.symbol,
+        timeframe: source === 'polygon' ? '1d' : previous.timeframe,
       }));
       return;
     }
@@ -566,6 +600,23 @@ function App() {
     if (data) {
       setDataPreview(data);
       setLastAction(`Loaded ${data.rows} ${data.timeframe} candles from ${data.source}`);
+    }
+    return data;
+  };
+
+  const loadSourceDiagnostics = async (probe = false) => {
+    setSourceProbeMessage(probe ? 'Probing configured sources...' : 'Loaded source configuration status.');
+    const params = new URLSearchParams({ probe: String(probe) });
+    const data = await callApi<{ sources: SourceDiagnostic[] }>(`/api/v1/data/sources?${params.toString()}`);
+    if (data?.sources) {
+      setSourceDiagnostics(data.sources);
+      const errors = data.sources.filter((source) => source.status === 'error');
+      const empty = data.sources.filter((source) => source.status === 'empty');
+      setSourceProbeMessage(
+        probe
+          ? `Probe complete: ${data.sources.filter((source) => source.status === 'ok').length} ok, ${errors.length} error, ${empty.length} empty.`
+          : 'Ready to probe configured data sources.',
+      );
     }
     return data;
   };
@@ -674,12 +725,12 @@ function App() {
   };
 
   const collectLiveQuote = async () => {
-    const data = await callApi<{ data: unknown; snapshots: LiveSnapshot[] }>('/api/v1/etrade/live/collect', {
+    const data = await callApi<{ data: unknown; summary?: QuoteSummary[]; snapshots: LiveSnapshot[] }>('/api/v1/etrade/live/collect', {
       method: 'POST',
       body: JSON.stringify({ symbols: liveSymbols, detailFlag: 'ALL' }),
     });
     if (data) {
-      setLiveQuote({ symbols: liveSymbols, detailFlag: 'ALL', data: data.data });
+      setLiveQuote({ symbols: liveSymbols, detailFlag: 'ALL', summary: data.summary, data: data.data });
       setLiveSnapshots(data.snapshots ?? []);
       setLastAction(`Collected E*TRADE quote snapshot for ${liveSymbols}`);
     }
@@ -783,6 +834,13 @@ function App() {
       const next = { ...previous, [field]: value };
       if (field === 'strategy') {
         next.option_type = value.includes('put') ? 'PUT' : 'CALL';
+      }
+      if (field === 'source' && value === 'polygon') {
+        next.symbol = 'AAPL';
+        next.timeframe = '1d';
+      }
+      if (field === 'source' && value === 'sample') {
+        next.symbol = 'ES';
       }
       return next;
     });
@@ -909,10 +967,13 @@ function App() {
             setOauthVerifier={setOauthVerifier}
             selectedPaperSessionId={selectedPaperSessionId}
             selectPaperSession={selectPaperSession}
+            sourceDiagnostics={sourceDiagnostics}
+            sourceProbeMessage={sourceProbeMessage}
             startEtradeOAuth={startEtradeOAuth}
             updateOptionField={updateOptionField}
             updatePaperField={updatePaperField}
             updateProviderField={updateProviderField}
+            loadSourceDiagnostics={loadSourceDiagnostics}
           />
         ) : (
           <>
@@ -924,6 +985,10 @@ function App() {
                 <option value="NQ">NQ - E-mini Nasdaq 100</option>
                 <option value="CL">CL - Crude Oil</option>
                 <option value="GC">GC - Gold</option>
+                <option value="AAPL">AAPL - Apple</option>
+                <option value="SPY">SPY - S&P 500 ETF</option>
+                <option value="QQQ">QQQ - Nasdaq 100 ETF</option>
+                <option value="NVDA">NVDA - Nvidia</option>
               </select>
             </Field>
 
@@ -959,6 +1024,7 @@ function App() {
               <select value={formData.source} onChange={(event) => updateField('source', event.target.value)}>
                 <option value="sample">Sample CSV</option>
                 <option value="tradovate">Tradovate</option>
+                <option value="polygon">Polygon</option>
               </select>
             </Field>
 
@@ -1068,6 +1134,28 @@ function Field({ children, className = '', label }: { children: React.ReactNode;
   );
 }
 
+function QuoteSummaryList({ summaries }: { summaries: QuoteSummary[] }) {
+  return (
+    <div className="quote-summary-grid">
+      {summaries.map((quote) => (
+        <article className="quote-summary-card" key={`${quote.symbol}-${quote.datetime}`}>
+          <div>
+            <span>{quote.symbol || 'Unknown'}</span>
+            <strong>{quote.description || quote.security_type || 'Quote'}</strong>
+          </div>
+          <ul>
+            <li><span>Last</span><strong>{quote.last ? formatCurrency(quote.last) : 'n/a'}</strong></li>
+            <li><span>Bid / ask</span><strong>{formatOptionalPrice(quote.bid)} / {formatOptionalPrice(quote.ask)}</strong></li>
+            <li><span>Volume</span><strong>{quote.volume ? quote.volume.toLocaleString() : 'n/a'}</strong></li>
+            <li><span>Status</span><strong>{quote.quote_status || 'n/a'}</strong></li>
+          </ul>
+          <p>{quote.datetime || quote.source_note}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
 function ModulePanel({
   activeNav,
   apiHealth,
@@ -1105,10 +1193,13 @@ function ModulePanel({
   setOauthVerifier,
   selectedPaperSessionId,
   selectPaperSession,
+  sourceDiagnostics,
+  sourceProbeMessage,
   startEtradeOAuth,
   updateOptionField,
   updatePaperField,
   updateProviderField,
+  loadSourceDiagnostics,
 }: {
   activeNav: string;
   apiHealth: ApiHealth | null;
@@ -1146,10 +1237,13 @@ function ModulePanel({
   setOauthVerifier: (value: string) => void;
   selectedPaperSessionId: number | null;
   selectPaperSession: (sessionId: number) => void;
+  sourceDiagnostics: SourceDiagnostic[];
+  sourceProbeMessage: string;
   startEtradeOAuth: () => void;
   updateOptionField: (field: keyof OptionsForm, value: string) => void;
   updatePaperField: (field: keyof PaperForm, value: string) => void;
   updateProviderField: (providerKey: string, fieldKey: string, value: string) => void;
+  loadSourceDiagnostics: (probe?: boolean) => void;
 }) {
   const routeEntries = apiHealth ? Object.entries(apiHealth.routes) : [];
   const selectedPaperSession = paperSessions.find((session) => session.id === selectedPaperSessionId) ?? paperSessions[0] ?? null;
@@ -1222,6 +1316,7 @@ function ModulePanel({
                   Collect
                 </button>
               </div>
+              {liveQuote?.summary?.length ? <QuoteSummaryList summaries={liveQuote.summary} /> : null}
               <pre className="live-json">{liveQuote ? summarizePayload(liveQuote.data) : 'No live quote loaded yet.'}</pre>
             </article>
 
@@ -1243,6 +1338,50 @@ function ModulePanel({
                 )}
               </ul>
             </article>
+          </>
+        )}
+
+        {activeNav === 'Data Sources' && (
+          <>
+            <article className="module-card is-wide">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Source diagnostics</h3>
+                  <p>{sourceProbeMessage}</p>
+                </div>
+                <strong className="module-status-ok">{sourceDiagnostics.length} sources</strong>
+              </div>
+              <div className="action-row">
+                <button className="run-button" type="button" onClick={() => loadSourceDiagnostics(true)}>
+                  <ChartIcon />
+                  Probe sources
+                </button>
+                <button className="reset-button" type="button" onClick={() => loadSourceDiagnostics(false)}>
+                  <ResetIcon />
+                  Refresh status
+                </button>
+              </div>
+            </article>
+
+            {sourceDiagnostics.map((source) => (
+              <article className="module-card" key={source.key}>
+                <div className="provider-card-header">
+                  <div>
+                    <h3>{source.label}</h3>
+                    <p>{source.detail}</p>
+                  </div>
+                  <strong className={source.status === 'ok' || source.status === 'ready' ? 'module-status-ok' : 'module-status-warn'}>
+                    {source.status.replace(/_/g, ' ')}
+                  </strong>
+                </div>
+                <ul>
+                  <li><span>Configured</span><strong>{source.configured ? 'yes' : 'no'}</strong></li>
+                  <li><span>Rows / records</span><strong>{source.rows.toLocaleString()}</strong></li>
+                  <li><span>Source key</span><strong>{source.key}</strong></li>
+                </ul>
+                <pre className="live-json">{summarizePayload(source.preview)}</pre>
+              </article>
+            ))}
           </>
         )}
 
@@ -1393,6 +1532,7 @@ function ModulePanel({
                   <select value={optionForm.source} onChange={(event) => updateOptionField('source', event.target.value)}>
                     <option value="sample">Sample CSV</option>
                     <option value="tradovate">Tradovate</option>
+                    <option value="polygon">Polygon</option>
                   </select>
                 </label>
                 <label className="provider-field">
@@ -2033,6 +2173,7 @@ function average(values: number[]) {
 function moduleTitle(activeNav: string) {
   const titles: Record<string, string> = {
     'Live Data': 'E*TRADE live market data collection',
+    'Data Sources': 'Market data source diagnostics',
     'Paper Trade': 'Forward paper validation',
     Options: 'Options strategy replay',
     Congress: 'Congressional disclosure backtesting',
@@ -2048,6 +2189,7 @@ function moduleTitle(activeNav: string) {
 function moduleDescription(activeNav: string) {
   const descriptions: Record<string, string> = {
     'Live Data': 'Connect E*TRADE through OAuth, fetch quote snapshots, and save them into the local market-data collection store.',
+    'Data Sources': 'Probe every configured source, inspect row counts, and see source-specific errors before trusting a backtest.',
     'Paper Trade': 'Create paper-only sessions, mark them with live E*TRADE quotes or manual prices, and compare the future equity trail against your backtest thesis.',
     Options: 'Replay option payoff strategies against the same underlying candle sources used by the backtest engine.',
     Congress: 'Review locally stored congressional disclosures and replay them against deterministic futures proxies.',
@@ -2073,6 +2215,10 @@ function formatCurrency(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+function formatOptionalPrice(value: number | null) {
+  return typeof value === 'number' && Number.isFinite(value) ? formatCurrency(value) : 'n/a';
 }
 
 function toFixed(value: unknown) {
@@ -2204,6 +2350,16 @@ function ChartIcon() {
       <path d="M4 19V5" />
       <path d="M4 19h16" />
       <path d="M7 15l4-4 3 2 5-7" />
+    </IconSvg>
+  );
+}
+
+function DatabaseIcon() {
+  return (
+    <IconSvg>
+      <ellipse cx="12" cy="5" rx="7" ry="3" />
+      <path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5" />
+      <path d="M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
     </IconSvg>
   );
 }

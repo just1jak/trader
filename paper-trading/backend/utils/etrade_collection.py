@@ -281,6 +281,30 @@ def extract_quote_price(payload):
     return {'price': price, 'field': field}
 
 
+def summarize_quote_payload(payload):
+    quote_data = (((payload or {}).get('QuoteResponse') or {}).get('QuoteData') or [])
+    summaries = []
+    for item in quote_data:
+        product = item.get('Product') or {}
+        all_data = item.get('All') or {}
+        summaries.append({
+            'symbol': product.get('symbol') or all_data.get('symbol') or '',
+            'security_type': product.get('securityType') or '',
+            'description': all_data.get('companyName') or all_data.get('symbolDescription') or '',
+            'quote_status': item.get('quoteStatus') or '',
+            'datetime': item.get('dateTime') or '',
+            'last': _float_or_none(all_data.get('lastTrade')),
+            'bid': _float_or_none(all_data.get('bid')),
+            'ask': _float_or_none(all_data.get('ask')),
+            'change': _float_or_none(all_data.get('changeClose')),
+            'change_percent': _float_or_none(all_data.get('changeClosePercentage')),
+            'volume': _float_or_none(all_data.get('totalVolume')) or _float_or_none(all_data.get('previousDayVolume')),
+            'previous_close': _float_or_none(all_data.get('previousClose')),
+            'source_note': 'E*TRADE sandbox can return canned historical quote data.',
+        })
+    return summaries
+
+
 def _ensure_db():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(DB_PATH) as connection:

@@ -19,10 +19,12 @@ from utils.etrade_collection import (
     mark_paper_session,
     save_market_snapshot,
     save_pending_oauth,
+    summarize_quote_payload,
 )
 from utils.options_backtest import run_long_option_backtest
+from utils.polygon import PolygonClient, PolygonConfigError
 from utils.provider_config import apply_to_flask_config, provider_status, save_provider_settings
-from utils.tradovate import TradovateClient
+from utils.tradovate import TradovateClient, TradovateConfigError
 
 
 api = Namespace('trading', description='Backtesting and market-data operations')
@@ -43,7 +45,7 @@ backtest_input = api.model('BacktestInput', {
     'timeframe': fields.String(required=True, description='Candle size, e.g., 1min, 5min, 1h'),
     'strategy': fields.String(required=True, description='Strategy module name'),
     'params': fields.Raw(required=True, description='Strategy parameters as JSON object'),
-    'source': fields.String(required=False, description='sample or tradovate', default='sample'),
+    'source': fields.String(required=False, description='sample, tradovate, or polygon', default='sample'),
 })
 
 options_backtest_input = api.model('OptionsBacktestInput', {
@@ -51,7 +53,7 @@ options_backtest_input = api.model('OptionsBacktestInput', {
     'from': fields.String(required=True, description='Start date (YYYY-MM-DD)'),
     'to': fields.String(required=True, description='End date (YYYY-MM-DD)'),
     'timeframe': fields.String(required=False, description='Candle size', default='1min'),
-    'source': fields.String(required=False, description='sample', default='sample'),
+    'source': fields.String(required=False, description='sample, tradovate, or polygon', default='sample'),
     'option_type': fields.String(required=True, description='CALL or PUT'),
     'strike': fields.Float(required=True, description='Option strike'),
     'premium': fields.Float(required=True, description='Entry premium per contract'),
@@ -107,8 +109,10 @@ class HealthResource(Resource):
                 'sample': True,
                 'tradovate': _provider_configured('tradovate'),
                 'etrade_market_data': _provider_configured('etrade'),
+                'polygon': _provider_configured('polygon'),
             },
             'routes': {
+                'data_sources': '/api/v1/data/sources',
                 'backtest': '/api/v1/backtest',
                 'backtest_data': '/api/v1/market/backtest-data',
                 'etrade_oauth_start': '/api/v1/etrade/oauth/start',
@@ -228,10 +232,12 @@ class ETradeLiveQuoteResource(Resource):
         symbols = request.args.get('symbols', 'AAPL')
         detail_flag = request.args.get('detailFlag', 'ALL')
         try:
+            data = ETradeClient().get_quote(symbols, detail_flag=detail_flag)
             return {
                 'symbols': symbols,
                 'detailFlag': detail_flag,
-                'data': ETradeClient().get_quote(symbols, detail_flag=detail_flag),
+                'summary': summarize_quote_payload(data),
+                'data': data,
             }, 200
         except ETradeConfigError as exc:
             return {'error': str(exc)}, 400
@@ -256,7 +262,12 @@ class ETradeCollectQuoteResource(Resource):
                 request_params={'symbols': symbols, 'detailFlag': detail_flag},
                 response_payload=data,
             )
-            return {'snapshot': snapshot, 'data': data, 'snapshots': list_market_snapshots()}, 200
+            return {
+                'snapshot': snapshot,
+                'data': data,
+                'summary': summarize_quote_payload(data),
+                'snapshots': list_market_snapshots(),
+            }, 200
         except ETradeConfigError as exc:
             return {'error': str(exc)}, 400
         except Exception as exc:
@@ -268,6 +279,16 @@ class ETradeSnapshotCollectionResource(Resource):
     @api.response(200, 'Success')
     def get(self):
         return {'snapshots': list_market_snapshots(request.args.get('limit', 25))}, 200
+
+
+@api.route('/data/sources')
+class DataSourcesResource(Resource):
+    @api.response(200, 'Success')
+    def get(self):
+        return {
+            'probe': _to_bool(request.args.get('probe'), default=False),
+            'sources': _data_source_status(_to_bool(request.args.get('probe'), default=False)),
+        }, 200
 
 
 @api.route('/paper/sessions')
@@ -382,6 +403,8 @@ class BacktestResource(Resource):
             return _json_ready(results), 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
+        except (TradovateConfigError, PolygonConfigError) as exc:
+            return {'error': str(exc)}, 400
         except Exception as exc:
             return {'error': str(exc)}, 500
 
@@ -400,7 +423,7 @@ class BacktestDataResource(Resource):
         if source == 'etrade':
             return {
                 'error': 'E*TRADE market APIs provide quote and option-chain snapshots here, not historical OHLCV candles.',
-                'available_sources': ['sample', 'tradovate'],
+                'available_sources': ['sample', 'tradovate', 'polygon'],
             }, 400
 
         try:
@@ -419,6 +442,8 @@ class BacktestDataResource(Resource):
                 'candles': candles_to_records(candles),
             }, 200
         except ValueError as exc:
+            return {'error': str(exc)}, 400
+        except (TradovateConfigError, PolygonConfigError) as exc:
             return {'error': str(exc)}, 400
 
 
@@ -502,6 +527,8 @@ class OptionsBacktestResource(Resource):
             return _json_ready(results), 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
+        except (TradovateConfigError, PolygonConfigError) as exc:
+            return {'error': str(exc)}, 400
         except Exception as exc:
             return {'error': str(exc)}, 500
 
@@ -522,6 +549,177 @@ class CongressBacktestResource(Resource):
         return _json_ready(run_congressional_backtest(payload.get('holding_days', 5))), 200
 
 
+def _data_source_status(probe=False):
+    providers = {provider['key']: provider for provider in provider_status()}
+    sources = []
+
+    try:
+        sample = load_sample_candles(symbol='ES', timeframe='1min', start='2025-01-02', end='2025-01-02')
+        sources.append(_source_item(
+            key='sample',
+            label='Sample CSV',
+            configured=True,
+            status='ok' if not sample.empty else 'empty',
+            rows=len(sample),
+            detail='Local ES sample candles are available for credential-free backtests.',
+            preview=_candle_preview(sample),
+        ))
+    except Exception as exc:
+        sources.append(_source_item('sample', 'Sample CSV', True, 'error', detail=_safe_error(exc)))
+
+    tradovate_configured = bool(providers.get('tradovate', {}).get('configured'))
+    if not tradovate_configured:
+        sources.append(_source_item(
+            key='tradovate',
+            label='Tradovate',
+            configured=False,
+            status='needs_config',
+            detail='Save Tradovate credentials in Settings before probing futures candles.',
+        ))
+    elif probe:
+        try:
+            candles = _load_tradovate_candles({
+                'symbol': 'ES',
+                'timeframe': '1min',
+                'from': '2025-01-02',
+                'to': '2025-01-02',
+            })
+            sources.append(_source_item(
+                key='tradovate',
+                label='Tradovate',
+                configured=True,
+                status='ok' if not candles.empty else 'empty',
+                rows=len(candles),
+                detail='Tradovate historical futures probe completed.',
+                preview=_candle_preview(candles),
+            ))
+        except Exception as exc:
+            sources.append(_source_item('tradovate', 'Tradovate', True, 'error', detail=_safe_error(exc)))
+    else:
+        sources.append(_source_item(
+            key='tradovate',
+            label='Tradovate',
+            configured=True,
+            status='ready',
+            detail='Configured. Run a probe to verify live credential and market-data access.',
+        ))
+
+    etrade_configured = bool(providers.get('etrade', {}).get('configured'))
+    snapshot_count = len(list_market_snapshots(limit=100))
+    if not etrade_configured:
+        sources.append(_source_item(
+            key='etrade_market_data',
+            label='E*TRADE market data',
+            configured=False,
+            status='needs_config',
+            rows=snapshot_count,
+            detail='Complete E*TRADE OAuth before probing quotes and options chains.',
+        ))
+    elif probe:
+        try:
+            quote = ETradeClient().get_quote('AAPL', detail_flag='ALL')
+            summary = summarize_quote_payload(quote)
+            sources.append(_source_item(
+                key='etrade_market_data',
+                label='E*TRADE market data',
+                configured=True,
+                status='ok' if summary else 'empty',
+                rows=snapshot_count,
+                detail='E*TRADE quote probe completed. Sandbox data may be historical/canned.',
+                preview=summary[0] if summary else {},
+            ))
+        except Exception as exc:
+            sources.append(_source_item('etrade_market_data', 'E*TRADE market data', True, 'error', rows=snapshot_count, detail=_safe_error(exc)))
+    else:
+        sources.append(_source_item(
+            key='etrade_market_data',
+            label='E*TRADE market data',
+            configured=True,
+            status='ready',
+            rows=snapshot_count,
+            detail='Configured. Run a probe to verify quote access; collected snapshots are counted here.',
+        ))
+
+    polygon_configured = bool(providers.get('polygon', {}).get('configured'))
+    if not polygon_configured:
+        sources.append(_source_item(
+            key='polygon',
+            label='Polygon',
+            configured=False,
+            status='needs_config',
+            detail='Save a Polygon API key in Settings before probing stock aggregate bars.',
+        ))
+    elif probe:
+        try:
+            candles = PolygonClient().get_aggregates('AAPL', timeframe='1d', start='2025-01-02', end='2025-01-10')
+            sources.append(_source_item(
+                key='polygon',
+                label='Polygon',
+                configured=True,
+                status='ok' if not candles.empty else 'empty',
+                rows=len(candles),
+                detail='Polygon stock aggregate probe completed.',
+                preview=_candle_preview(candles),
+            ))
+        except Exception as exc:
+            sources.append(_source_item('polygon', 'Polygon', True, 'error', detail=_safe_error(exc)))
+    else:
+        sources.append(_source_item(
+            key='polygon',
+            label='Polygon',
+            configured=True,
+            status='ready',
+            detail='Configured. Run a probe to verify aggregate-bar access.',
+        ))
+
+    congressional = list_congressional_trades(limit=5)
+    total = congressional.get('total', 0)
+    sources.append(_source_item(
+        key='congress',
+        label='Congressional disclosures',
+        configured=True,
+        status='ok' if total else 'empty',
+        rows=total,
+        detail='Local disclosure database row count.',
+        preview=(congressional.get('trades') or [{}])[0],
+    ))
+
+    return sources
+
+
+def _source_item(key, label, configured, status, rows=0, detail='', preview=None):
+    return {
+        'key': key,
+        'label': label,
+        'configured': configured,
+        'status': status,
+        'rows': rows,
+        'detail': detail,
+        'preview': _json_ready(preview or {}),
+    }
+
+
+def _candle_preview(candles):
+    if candles is None or candles.empty:
+        return {}
+    first = candles.iloc[0]
+    last = candles.iloc[-1]
+    return {
+        'first_timestamp': candles.index[0],
+        'last_timestamp': candles.index[-1],
+        'first_close': first.get('close'),
+        'last_close': last.get('close'),
+        'last_volume': last.get('volume'),
+    }
+
+
+def _safe_error(exc):
+    text = str(exc)
+    if not text:
+        text = exc.__class__.__name__
+    return text[:260]
+
+
 def _load_backtest_candles(payload):
     source = payload.get('source', 'sample')
     if source == 'sample':
@@ -533,6 +731,13 @@ def _load_backtest_candles(payload):
         )
     if source == 'tradovate':
         return _load_tradovate_candles(payload)
+    if source == 'polygon':
+        return PolygonClient().get_aggregates(
+            symbol=payload.get('symbol', 'AAPL'),
+            timeframe=payload.get('timeframe', '1d'),
+            start=payload.get('from'),
+            end=payload.get('to'),
+        )
     raise ValueError(f'Unsupported backtest data source: {source}')
 
 

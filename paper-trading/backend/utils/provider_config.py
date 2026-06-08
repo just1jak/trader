@@ -34,8 +34,9 @@ PROVIDERS = {
     },
     'polygon': {
         'label': 'Polygon',
-        'description': 'Reserved market-data provider slot. Stored here but not used by backtests yet.',
+        'description': 'Historical stock and options aggregate bars for backtests.',
         'fields': {
+            'POLYGON_BASE_URL': {'label': 'Base URL', 'secret': False, 'default': 'https://api.polygon.io'},
             'POLYGON_API_KEY': {'label': 'API key', 'secret': True},
         },
         'required': ['POLYGON_API_KEY'],

@@ -8,6 +8,7 @@ All routes are mounted under `/api/v1`.
   - Runs an existing strategy module against OHLCV candles.
   - `source=sample` uses `data/sample_ES_1min.csv`.
   - `source=tradovate` uses the existing Tradovate client.
+  - `source=polygon` uses Polygon aggregate bars for stock symbols.
   - `source=etrade` is intentionally not supported for historical candles because the wired E*TRADE layer exposes quote and option-chain snapshots, not historical OHLCV bars.
 
 - `GET /market/backtest-data`
@@ -25,6 +26,14 @@ All routes are mounted under `/api/v1`.
   - Body shape: `{ "values": { "ENV_KEY": "value" } }`.
   - Supported provider keys: `etrade`, `tradovate`, `polygon`.
   - Blank submitted fields are ignored, so a blank saved secret input keeps the existing value.
+
+## Data Source Diagnostics
+
+- `GET /data/sources`
+  - Returns readiness status, configured status, row counts, and a preview or error for each source.
+  - Source keys: `sample`, `tradovate`, `etrade_market_data`, `polygon`, and `congress`.
+  - Query param: `probe=true` performs lightweight external checks for configured providers.
+  - Use this before trusting a backtest run; it exposes missing credentials, rejected broker auth, empty congressional data, and stale local stores.
 
 ## E*TRADE Market Data
 
@@ -54,10 +63,12 @@ Routes:
 
 - `GET /etrade/live/quote?symbols=AAPL,SPY&detailFlag=ALL`
   - Fetches a live read-only quote snapshot.
+  - Response includes a normalized `summary` array in addition to the raw E*TRADE payload.
 
 - `POST /etrade/live/collect`
   - Body shape: `{ "symbols": "AAPL,SPY", "detailFlag": "ALL" }`.
   - Fetches and stores one quote snapshot in `data/market_data.sqlite`.
+  - Response includes a normalized `summary` array in addition to the raw E*TRADE payload.
 
 - `GET /etrade/live/snapshots`
   - Lists saved quote snapshot metadata.
@@ -80,6 +91,7 @@ Routes:
   - Simulation-only options payoff proxy using underlying OHLCV.
   - Required fields: `symbol`, `from`, `to`, `option_type`, `strike`, `premium`.
   - Optional fields: `timeframe`, `source`, `contracts`, `multiplier`, `strategy`, `short_strike`, `short_premium`.
+  - Supported sources: `sample`, `tradovate`, and `polygon`.
   - Supported strategies: `long_call`, `long_put`, `bull_call_spread`, `bear_put_spread`, `long_straddle`.
   - This does not model historical option bid/ask, implied volatility, theta decay, early exercise, assignment, liquidity, or slippage.
 

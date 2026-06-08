@@ -801,6 +801,60 @@ button {
   white-space: pre-wrap;
 }
 
+.quote-summary-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.quote-summary-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  background:
+    linear-gradient(180deg, rgba(55, 255, 107, 0.07), rgba(255, 255, 255, 0.015)),
+    #061016;
+  border: 1px solid rgba(55, 255, 107, 0.2);
+  border-radius: var(--radius-sm);
+}
+
+.quote-summary-card > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.quote-summary-card > div span {
+  color: var(--green);
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.quote-summary-card > div strong {
+  color: #f2f7f3;
+  font-size: 12px;
+  font-weight: 720;
+  text-align: right;
+}
+
+.quote-summary-card ul {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.quote-summary-card li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+}
+
+.quote-summary-card p {
+  color: #8fa098;
+  font-size: 12px;
+}
+
 .provider-field {
   display: grid;
   gap: 7px;

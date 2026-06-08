@@ -18,6 +18,8 @@ class Config:
         'ETRADE_BASE_URL',
         'https://apisb.etrade.com' if ETRADE_ENV == 'sandbox' else 'https://api.etrade.com'
     )
+    POLYGON_API_KEY = os.getenv('POLYGON_API_KEY')
+    POLYGON_BASE_URL = os.getenv('POLYGON_BASE_URL', 'https://api.polygon.io')
     SQLALCHEMY_DATABASE_URI = os.getenv(
         'DATABASE_URL',
         'postgresql://papertrader:papertrader@db:5432/papertrading'
