@@ -12,7 +12,7 @@ from utils.candle_cache import (
     save_cached_candles,
 )
 from utils.congressional import list_congressional_trades, run_congressional_backtest
-from utils.congressional_ingest_bridge import sync_congressional_disclosures
+from utils.congressional_ingest_bridge import congressional_disclosure_counts, sync_congressional_disclosures
 from utils.etrade import ETradeClient, ETradeConfigError
 from utils.etrade_collection import (
     clear_pending_oauth,
@@ -114,7 +114,7 @@ congress_backtest_input = api.model('CongressBacktestInput', {
 congress_ingest_input = api.model('CongressIngestInput', {
     'year': fields.Integer(required=False, description='Disclosure year to import'),
     'limit': fields.Integer(required=False, description='Maximum House PTR PDFs to download', default=25),
-    'include_senate': fields.Boolean(required=False, description='Attempt Senate ingestion if supported', default=False),
+    'include_senate': fields.Boolean(required=False, description='Include Senate eFD-derived disclosure ingestion', default=True),
 })
 
 
@@ -623,12 +623,12 @@ class CongressIngestResource(Resource):
             summary = sync_congressional_disclosures(
                 year=payload.get('year'),
                 limit=payload.get('limit') or 25,
-                include_senate=bool(payload.get('include_senate')),
+                include_senate=_to_bool(payload.get('include_senate'), default=True),
             )
             return {
                 'summary': _json_ready(summary),
                 'trades': list_congressional_trades(limit=25),
-                'message': 'Congressional disclosure sync completed from official House PTR PDFs.',
+                'message': 'Congressional disclosure sync completed from House PTR PDFs and Senate eFD-derived data.',
             }, 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
@@ -781,6 +781,7 @@ def _data_source_status(probe=False):
     ))
 
     congressional = list_congressional_trades(limit=5)
+    congressional_counts = congressional_disclosure_counts()
     total = congressional.get('total', 0)
     sources.append(_source_item(
         key='congress',
@@ -788,8 +789,11 @@ def _data_source_status(probe=False):
         configured=True,
         status='ok' if total else 'empty',
         rows=total,
-        detail='Local disclosure database row count.',
-        preview=(congressional.get('trades') or [{}])[0],
+        detail=f"Local disclosure database row count: House {congressional_counts.get('house', 0)}, Senate {congressional_counts.get('senate', 0)}.",
+        preview={
+            'counts': congressional_counts,
+            'latest': (congressional.get('trades') or [{}])[0],
+        },
     ))
 
     return sources

@@ -32,12 +32,12 @@ workflows. Live order execution is intentionally not wired here.
 - Local OHLCV candle cache with collect/replay routes
 - Forward paper-trading sessions marked from live quotes or manual prices
 - Simulation-only options strategy payoff backtester
-- Official House PTR disclosure importer and congressional replay endpoint
+- Official House PTR disclosure importer, Senate eFD-derived importer, and congressional replay endpoint
 
 ## Key Files
 
 - `congressional-trading/congress_trades.db` — congressional trade database
-- `congressional-trading/congress_ingest.py` — official House PTR ZIP/PDF importer
+- `congressional-trading/congress_ingest.py` — House PTR ZIP/PDF importer plus Senate eFD-derived fallback importer
 - `congressional-trading/backtest.py` — congressional-to-futures backtest prototype
 - `paper-trading/` — simulation backend + UI
 - `paper-trading/API.md` — detailed API wiring notes
@@ -174,8 +174,8 @@ Routes:
 
 - `POST /api/v1/congress/ingest`
   - Downloads the official House disclosure index ZIP, fetches recent PTR PDFs, parses ticker transactions, and stores them in SQLite.
-  - Body shape: `{ "year": 2026, "limit": 25, "include_senate": false }`.
-  - Senate placeholder rows are intentionally disabled; Senate returns skipped/unavailable until a real eFD parser is added.
+  - When `include_senate=true`, imports recent Senate eFD-derived ticker rows from DataDawn/OpenRegs with original PTR links. The importer does not create synthetic Senate rows.
+  - Body shape: `{ "year": 2026, "limit": 25, "include_senate": true }`.
 
 - `POST /api/v1/congress/backtest`
   - Runs the congressional disclosure replay against deterministic futures proxies.
@@ -204,7 +204,7 @@ Additional dashboard modules:
 - `Backtest` — includes a `Collect candles` action that stores the selected provider/date range into the local cache.
 - `Paper Trade` — forward paper sessions, live quote marks, manual test marks, and equity/PnL history.
 - `Options` — simulation-only options payoff strategy replay.
-- `Congress` — official House PTR sync, local congressional disclosure replay, and stored disclosure preview.
+- `Congress` — House PTR sync, Senate eFD-derived sync, local congressional disclosure replay, and stored disclosure preview.
 
 The Vite dev server proxies `/api` to `http://localhost:5001`, and the frontend also defaults to `http://localhost:5001` during dev when `VITE_BACKEND_URL` is not set. If macOS has another service on port `5000`, use the alternate backend port path:
 
@@ -304,7 +304,7 @@ The production frontend is served by nginx. Browser requests to `/api/` are prox
 - E*TRADE quote collection has been smoke-tested against the saved OAuth token; sandbox responses can be historical/canned, and expired tokens return a reconnect message.
 - Tradovate and Polygon fail cleanly with JSON setup errors when credentials are missing or rejected.
 - The candle cache has been smoke-tested by collecting sample ES candles and replaying a `source=cache` backtest.
-- Congressional House ingestion has been verified against the official 2026 Clerk ZIP/PDF path, and the local SQLite database now contains parsed House PTR rows. Senate eFD ingestion still needs a real parser/source before it should be trusted.
+- Congressional House ingestion has been verified against the official 2026 Clerk ZIP/PDF path, and Senate ingestion uses current DataDawn/OpenRegs eFD-derived ticker rows with original PTR links when the official eFD AJAX endpoint is unavailable to server-side requests.
 - Frontend build has been verified with `npm run build`; the generated `dist/` folder is ignored for source control.
 
 ## External API References

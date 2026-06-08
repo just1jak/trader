@@ -1,4 +1,5 @@
 import argparse
+import html
 import io
 import re
 import sqlite3
@@ -17,6 +18,12 @@ SCHEMA_PATH = PROJECT_ROOT / 'db_schema.sql'
 HOUSE_BULK_ZIP_URL = 'https://disclosures-clerk.house.gov/public_disc/financial-pdfs/{year}FD.ZIP'
 HOUSE_PTR_PDF_URL = 'https://disclosures-clerk.house.gov/public_disc/ptr-pdfs/{year}/{doc_id}.pdf'
 SENATE_HOME_URL = 'https://efdsearch.senate.gov/search/home/'
+SENATE_STOCK_WATCHER_DAILY_URL = (
+    'https://raw.githubusercontent.com/timothycarambat/'
+    'senate-stock-watcher-data/master/aggregate/all_daily_summaries.json'
+)
+DATADAWN_STOCK_TRADES_URL = 'https://regs.datadawn.org/openregs/stock_trades.json'
+TRADE_UNIQUE_SQL = 'UNIQUE(filing_date, transaction_date, member, ticker, transaction_type, amount, comment, asset_description)'
 
 TICKER_WITH_TYPE_RE = re.compile(
     r'(?P<before>.*?)'
@@ -41,7 +48,7 @@ def sync_congressional_disclosures(year=None, limit=25, include_senate=False, db
     limit = max(1, min(int(limit or 25), 200))
 
     house = import_house_trades(year=year, limit=limit, db_path=db_path)
-    senate = import_senate_trades(db_path=db_path) if include_senate else {
+    senate = import_senate_trades(limit=limit, db_path=db_path) if include_senate else {
         'source': 'senate',
         'status': 'skipped',
         'inserted': 0,
@@ -107,33 +114,74 @@ def import_house_trades(year=None, limit=25, db_path=DB_PATH):
     }
 
 
-def import_senate_trades(db_path=DB_PATH):
+def import_senate_trades(limit=25, db_path=DB_PATH):
     ensure_schema(db_path)
+    limit = max(1, min(int(limit or 25), 200))
+    errors = []
+
     try:
         response = requests.get(SENATE_HOME_URL, timeout=20)
         if response.status_code >= 400:
-            return {
-                'source': 'senate',
-                'status': 'unavailable',
-                'inserted': 0,
-                'parsed': 0,
-                'errors': [f'Senate eFD returned HTTP {response.status_code}.'],
-            }
+            errors.append(f'Official Senate eFD returned HTTP {response.status_code}; using structured fallback.')
+    except Exception as exc:
+        errors.append(f'Official Senate eFD unavailable: {str(exc)[:180]}; using structured fallback.')
+
+    try:
+        rows, available = _fetch_datadawn_senate_trades(limit)
+        inserted = 0
+        with sqlite3.connect(db_path) as connection:
+            for row in rows:
+                inserted += _insert_senate_datadawn_trade(connection, row)
+        return {
+            'source': 'datadawn_openregs',
+            'status': 'ok' if rows else 'empty',
+            'reports_available': available,
+            'reports_downloaded': len(rows),
+            'inserted': inserted,
+            'parsed': len(rows),
+            'errors': errors[:10],
+        }
+    except Exception as exc:
+        errors.append(f'DataDawn Senate fallback unavailable: {str(exc)[:180]}; using historical GitHub fallback.')
+
+    try:
+        response = requests.get(SENATE_STOCK_WATCHER_DAILY_URL, timeout=30)
+        if response.status_code >= 400:
+            raise CongressIngestError(f'Senate fallback dataset returned HTTP {response.status_code}.')
+        summaries = response.json()
     except Exception as exc:
         return {
             'source': 'senate',
             'status': 'unavailable',
             'inserted': 0,
             'parsed': 0,
-            'errors': [str(exc)[:220]],
+            'errors': errors + [str(exc)[:220]],
         }
 
+    reports = sorted(
+        (summary for summary in summaries if summary.get('transactions')),
+        key=lambda item: (_normalize_date(item.get('date_recieved') or item.get('date_received')), item.get('ptr_link') or ''),
+        reverse=True,
+    )
+    selected = reports[:limit]
+    inserted = 0
+    parsed = 0
+
+    with sqlite3.connect(db_path) as connection:
+        for report in selected:
+            transactions = report.get('transactions') or []
+            parsed += len(transactions)
+            for trade in transactions:
+                inserted += _insert_senate_trade(connection, report, trade)
+
     return {
-        'source': 'senate',
-        'status': 'not_implemented',
-        'inserted': 0,
-        'parsed': 0,
-        'errors': ['Senate eFD search requires a separate parser; placeholder rows are intentionally disabled.'],
+        'source': 'senate_stock_watcher',
+        'status': 'ok' if parsed else 'empty',
+        'reports_available': len(reports),
+        'reports_downloaded': len(selected),
+        'inserted': inserted,
+        'parsed': parsed,
+        'errors': errors[:10],
     }
 
 
@@ -225,6 +273,49 @@ def ensure_schema(db_path=DB_PATH):
     schema = SCHEMA_PATH.read_text()
     with sqlite3.connect(db_path) as connection:
         connection.executescript(schema)
+        _migrate_trade_unique(connection, 'house_trades', 'district')
+        _migrate_trade_unique(connection, 'senate_trades', 'state')
+
+
+def _migrate_trade_unique(connection, table, region_column):
+    current = connection.execute(
+        "select sql from sqlite_master where type = 'table' and name = ?",
+        (table,),
+    ).fetchone()
+    if not current or TRADE_UNIQUE_SQL in (current[0] or ''):
+        return
+
+    backup = f'{table}_old_unique'
+    connection.execute(f'drop table if exists {backup}')
+    connection.execute(f'alter table {table} rename to {backup}')
+    connection.execute(
+        f"""
+        create table {table} (
+            id integer primary key autoincrement,
+            filing_date text,
+            transaction_date text,
+            member text,
+            {region_column} text,
+            ticker text,
+            asset_description text,
+            transaction_type text,
+            amount text,
+            comment text,
+            {TRADE_UNIQUE_SQL}
+        )
+        """
+    )
+    connection.execute(
+        f"""
+        insert or ignore into {table}
+          (id, filing_date, transaction_date, member, {region_column}, ticker,
+           asset_description, transaction_type, amount, comment)
+        select id, filing_date, transaction_date, member, {region_column}, ticker,
+               asset_description, transaction_type, amount, comment
+        from {backup}
+        """
+    )
+    connection.execute(f'drop table {backup}')
 
 
 def _house_ptr_reports(zip_bytes):
@@ -261,7 +352,7 @@ def _insert_house_trade(connection, report, trade):
           (filing_date, transaction_date, member, district, ticker,
            asset_description, transaction_type, amount, comment)
         values (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        on conflict(filing_date, transaction_date, member, ticker, transaction_type)
+        on conflict(filing_date, transaction_date, member, ticker, transaction_type, amount, comment, asset_description)
         do update set
           district = excluded.district,
           asset_description = excluded.asset_description,
@@ -281,6 +372,139 @@ def _insert_house_trade(connection, report, trade):
         ),
     )
     return 1 if cursor.rowcount == 1 else 0
+
+
+def _insert_senate_trade(connection, report, trade):
+    filing_date = _normalize_date(report.get('date_recieved') or report.get('date_received'))
+    member = _senate_member_name(report)
+    ticker = _normalize_ticker(_clean_html(trade.get('ticker') or ''))
+    if not _looks_like_ticker(ticker):
+        return 0
+    transaction_type = _transaction_type(trade.get('type'))
+    asset_description = _clean_html(trade.get('asset_description') or ticker)
+    comment_parts = [
+        'source=senate_stock_watcher',
+        f"ptr_link={report.get('ptr_link') or ''}",
+    ]
+    if trade.get('owner'):
+        comment_parts.append(f"owner={trade.get('owner')}")
+    if trade.get('asset_type'):
+        comment_parts.append(f"asset_type={trade.get('asset_type')}")
+    if report.get('bioguide'):
+        comment_parts.append(f"bioguide={report.get('bioguide')}")
+    if trade.get('comment') and trade.get('comment') != '--':
+        comment_parts.append(f"comment={_clean_html(trade.get('comment'))}")
+
+    cursor = connection.execute(
+        """
+        insert into senate_trades
+          (filing_date, transaction_date, member, state, ticker,
+           asset_description, transaction_type, amount, comment)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(filing_date, transaction_date, member, ticker, transaction_type, amount, comment, asset_description)
+        do update set
+          state = excluded.state,
+          asset_description = excluded.asset_description,
+          amount = excluded.amount,
+          comment = excluded.comment
+        """,
+        (
+            filing_date,
+            _normalize_date(trade.get('transaction_date')),
+            member,
+            '',
+            ticker,
+            asset_description[:240],
+            transaction_type,
+            _clean_amount(trade.get('amount')),
+            '; '.join(part for part in comment_parts if part)[:500],
+        ),
+    )
+    return 1 if cursor.rowcount == 1 else 0
+
+
+def _fetch_datadawn_senate_trades(limit):
+    response = requests.get(
+        DATADAWN_STOCK_TRADES_URL,
+        params={
+            '_size': limit,
+            '_sort_desc': 'transaction_date',
+            'chamber': 'Senate',
+            'ticker__notblank': '1',
+        },
+        timeout=30,
+    )
+    if response.status_code >= 400:
+        raise CongressIngestError(f'DataDawn stock_trades returned HTTP {response.status_code}.')
+    payload = response.json()
+    columns = payload.get('columns') or []
+    rows = [dict(zip(columns, row)) for row in payload.get('rows') or []]
+    return rows, int(payload.get('filtered_table_rows_count') or len(rows))
+
+
+def _insert_senate_datadawn_trade(connection, row):
+    ticker = _normalize_ticker(row.get('ticker'))
+    if not _looks_like_ticker(ticker):
+        return 0
+
+    comment_parts = [
+        'source=datadawn_openregs',
+        f"source_url={row.get('source_url') or ''}",
+        f"datadawn_id={row.get('id') or ''}",
+    ]
+    if row.get('owner'):
+        comment_parts.append(f"owner={row.get('owner')}")
+    if row.get('asset_type'):
+        comment_parts.append(f"asset_type={row.get('asset_type')}")
+    if row.get('bioguide_id'):
+        comment_parts.append(f"bioguide={row.get('bioguide_id')}")
+    if row.get('cik'):
+        comment_parts.append(f"cik={row.get('cik')}")
+    if not row.get('disclosure_date'):
+        comment_parts.append('disclosure_date_missing=true')
+    if row.get('comment'):
+        comment_parts.append(f"comment={_clean_html(row.get('comment'))}")
+
+    cursor = connection.execute(
+        """
+        insert into senate_trades
+          (filing_date, transaction_date, member, state, ticker,
+           asset_description, transaction_type, amount, comment)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(filing_date, transaction_date, member, ticker, transaction_type, amount, comment, asset_description)
+        do update set
+          state = excluded.state,
+          asset_description = excluded.asset_description,
+          amount = excluded.amount,
+          comment = excluded.comment
+        """,
+        (
+            _normalize_date(row.get('disclosure_date')),
+            _normalize_date(row.get('transaction_date')),
+            row.get('member_name') or '',
+            row.get('state_district') or '',
+            ticker,
+            _clean_html(row.get('asset_description') or ticker)[:240],
+            _transaction_type(row.get('transaction_type')),
+            _clean_amount(row.get('amount_range')),
+            '; '.join(part for part in comment_parts if part)[:500],
+        ),
+    )
+    return 1 if cursor.rowcount == 1 else 0
+
+
+def _senate_member_name(report):
+    first = (report.get('first_name') or '').strip()
+    last = (report.get('last_name') or '').strip()
+    if first or last:
+        return ' '.join(part for part in [first, last] if part)
+    office = report.get('office') or ''
+    return re.sub(r'\s*\([^)]*\)\s*$', '', office).strip()
+
+
+def _clean_html(value):
+    text = re.sub(r'<[^>]+>', ' ', value or '')
+    return re.sub(r'\s+', ' ', html.unescape(text)).strip(' -')
 
 
 def _asset_description(lines, index, candidate, match):

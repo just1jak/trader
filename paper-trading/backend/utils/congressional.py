@@ -45,7 +45,7 @@ def list_congressional_trades(limit=50):
                      amount, comment
               from senate_trades
             )
-            order by filing_date desc, transaction_date desc
+            order by coalesce(nullif(filing_date, ''), transaction_date) desc, transaction_date desc
             limit ?
             """,
             (limit,),

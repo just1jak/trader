@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS house_trades (
     transaction_type TEXT,
     amount TEXT,
     comment TEXT,
-    UNIQUE(filing_date, transaction_date, member, ticker, transaction_type)
+    UNIQUE(filing_date, transaction_date, member, ticker, transaction_type, amount, comment, asset_description)
 );
 
 CREATE TABLE IF NOT EXISTS senate_trades (
@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS senate_trades (
     transaction_type TEXT,
     amount TEXT,
     comment TEXT,
-    UNIQUE(filing_date, transaction_date, member, ticker, transaction_type)
+    UNIQUE(filing_date, transaction_date, member, ticker, transaction_type, amount, comment, asset_description)
 );
 
 CREATE TABLE IF NOT EXISTS backtest_results (

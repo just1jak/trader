@@ -933,7 +933,7 @@ function App() {
         '/api/v1/congress/ingest',
         {
           method: 'POST',
-          body: JSON.stringify({ year, limit: 25, include_senate: false }),
+          body: JSON.stringify({ year, limit: 25, include_senate: true }),
         },
       );
       if (data?.summary) {
@@ -1725,7 +1725,7 @@ function ModulePanel({
                   <li><span>Senate status</span><strong>{congressIngestResult.senate.status.replace(/_/g, ' ')}</strong></li>
                 </ul>
               ) : (
-                <p>Sync recent official House PTR PDFs before replaying disclosures.</p>
+                <p>Sync recent House PTR PDFs and Senate eFD-derived summaries before replaying disclosures.</p>
               )}
             </article>
 
