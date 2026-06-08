@@ -9,8 +9,14 @@ from utils.congressional import list_congressional_trades, run_congressional_bac
 from utils.etrade import ETradeClient, ETradeConfigError
 from utils.etrade_collection import (
     clear_pending_oauth,
+    create_paper_session,
+    extract_quote_price,
+    get_paper_session,
+    list_paper_marks,
+    list_paper_sessions,
     list_market_snapshots,
     load_pending_oauth,
+    mark_paper_session,
     save_market_snapshot,
     save_pending_oauth,
 )
@@ -69,6 +75,21 @@ etrade_collect_input = api.model('ETradeCollectInput', {
     'detailFlag': fields.String(required=False, description='E*TRADE quote detail flag', default='ALL'),
 })
 
+paper_session_input = api.model('PaperSessionInput', {
+    'name': fields.String(required=False, description='Session name'),
+    'symbol': fields.String(required=True, description='Symbol to forward test, e.g., AAPL'),
+    'strategy': fields.String(required=False, description='forward_long, forward_short, or observe_only', default='forward_long'),
+    'quantity': fields.Float(required=False, description='Simulated unit count', default=1),
+    'initial_cash': fields.Float(required=False, description='Starting notional cash balance', default=100000),
+    'notes': fields.String(required=False, description='Research notes for this paper session'),
+})
+
+paper_mark_input = api.model('PaperMarkInput', {
+    'session_id': fields.Integer(required=True, description='Paper session id'),
+    'price': fields.Float(required=False, description='Manual mark price; omit to use live E*TRADE quote'),
+    'detailFlag': fields.String(required=False, description='E*TRADE quote detail flag', default='ALL'),
+})
+
 congress_backtest_input = api.model('CongressBacktestInput', {
     'holding_days': fields.Integer(required=False, description='Holding window after disclosed trade', default=5),
 })
@@ -94,6 +115,8 @@ class HealthResource(Resource):
                 'etrade_live_quote': '/api/v1/etrade/live/quote',
                 'etrade_collect_quote': '/api/v1/etrade/live/collect',
                 'etrade_snapshots': '/api/v1/etrade/live/snapshots',
+                'paper_sessions': '/api/v1/paper/sessions',
+                'paper_mark': '/api/v1/paper/mark',
                 'quote': '/api/v1/market/quote/{symbols}',
                 'option_expirations': '/api/v1/market/options/expirations/{symbol}',
                 'option_chain': '/api/v1/market/options/chain/{symbol}',
@@ -245,6 +268,96 @@ class ETradeSnapshotCollectionResource(Resource):
     @api.response(200, 'Success')
     def get(self):
         return {'snapshots': list_market_snapshots(request.args.get('limit', 25))}, 200
+
+
+@api.route('/paper/sessions')
+class PaperSessionCollectionResource(Resource):
+    @api.response(200, 'Success')
+    def get(self):
+        return {'sessions': list_paper_sessions(request.args.get('limit', 50))}, 200
+
+    @api.expect(paper_session_input)
+    @api.response(201, 'Paper session created')
+    @api.response(400, 'Validation error')
+    def post(self):
+        payload = api.payload or {}
+        try:
+            session = create_paper_session(
+                name=payload.get('name'),
+                symbol=payload.get('symbol'),
+                strategy=payload.get('strategy') or 'forward_long',
+                quantity=payload.get('quantity') or 1,
+                initial_cash=payload.get('initial_cash') or 100000,
+                notes=payload.get('notes') or '',
+            )
+            return {'session': session, 'sessions': list_paper_sessions()}, 201
+        except ValueError as exc:
+            return {'error': str(exc)}, 400
+
+
+@api.route('/paper/sessions/<int:session_id>/marks')
+class PaperSessionMarksResource(Resource):
+    @api.response(200, 'Success')
+    @api.response(400, 'Validation error')
+    def get(self, session_id):
+        try:
+            get_paper_session(session_id)
+            return {'marks': list_paper_marks(session_id, request.args.get('limit', 100))}, 200
+        except ValueError as exc:
+            return {'error': str(exc)}, 400
+
+
+@api.route('/paper/mark')
+class PaperMarkResource(Resource):
+    @api.expect(paper_mark_input)
+    @api.response(200, 'Paper session marked')
+    @api.response(400, 'Configuration or validation error')
+    def post(self):
+        payload = api.payload or {}
+        try:
+            session = get_paper_session(payload.get('session_id'))
+            price_source = 'manual'
+            snapshot = None
+
+            if payload.get('price') in (None, ''):
+                detail_flag = payload.get('detailFlag') or 'ALL'
+                quote_payload = ETradeClient().get_quote(session['symbol'], detail_flag=detail_flag)
+                price_info = extract_quote_price(quote_payload)
+                price = price_info['price']
+                price_source = f"etrade:{price_info['field']}"
+                snapshot = save_market_snapshot(
+                    snapshot_type='paper_quote',
+                    symbol=session['symbol'],
+                    request_params={
+                        'symbols': session['symbol'],
+                        'detailFlag': detail_flag,
+                        'paper_session_id': session['id'],
+                    },
+                    response_payload=quote_payload,
+                )
+                raw_payload = quote_payload
+            else:
+                price = payload.get('price')
+                raw_payload = {'manual_price': price}
+
+            mark = mark_paper_session(
+                session_id=session['id'],
+                price=price,
+                raw_payload=raw_payload,
+                source_snapshot_id=snapshot['id'] if snapshot else None,
+            )
+            mark['price_source'] = price_source
+            return {
+                'mark': mark,
+                'marks': list_paper_marks(session['id']),
+                'sessions': list_paper_sessions(),
+            }, 200
+        except ETradeConfigError as exc:
+            return {'error': str(exc)}, 400
+        except ValueError as exc:
+            return {'error': str(exc)}, 400
+        except Exception as exc:
+            return {'error': str(exc)}, 502
 
 
 @api.route('/backtest')

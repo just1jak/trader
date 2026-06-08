@@ -27,6 +27,7 @@ workflows. Live order execution is intentionally not wired here.
 - Tradovate historical futures data path
 - Read-only E*TRADE quote and options-chain API layer
 - E*TRADE OAuth connect flow and snapshot collection store
+- Forward paper-trading sessions marked from live quotes or manual prices
 - Simulation-only options strategy payoff backtester
 - Congressional disclosure replay endpoint
 
@@ -104,6 +105,22 @@ Routes:
 - `GET /api/v1/etrade/live/snapshots`
   - Lists stored E*TRADE snapshot metadata.
 
+- `GET /api/v1/paper/sessions`
+  - Lists forward paper-trading sessions and their latest equity mark.
+
+- `POST /api/v1/paper/sessions`
+  - Creates a paper-only forward validation session.
+  - Supported models: `forward_long`, `forward_short`, and `observe_only`.
+  - Required fields: `symbol`; optional fields include `name`, `strategy`, `quantity`, `initial_cash`, and `notes`.
+
+- `POST /api/v1/paper/mark`
+  - Marks a paper session from a manual price or, when `price` is omitted, the current E*TRADE quote for that session symbol.
+  - Saves live quote marks as `paper_quote` snapshots in `paper-trading/data/market_data.sqlite`.
+  - This is simulation-only mark-to-market tracking; it does not place or preview orders.
+
+- `GET /api/v1/paper/sessions/{session_id}/marks`
+  - Lists the saved equity marks for a forward paper session.
+
 - `GET /api/v1/market/quote/{symbols}`
   - Calls E*TRADE quote data for one or more comma-separated equity or option symbols.
   - Optional query: `detailFlag=ALL|FUNDAMENTAL|INTRADAY|OPTIONS|WEEK_52|MF_DETAIL`.
@@ -151,6 +168,7 @@ The dashboard also includes a `Settings` module for broker and market-data crede
 Additional dashboard modules:
 
 - `Live Data` — E*TRADE OAuth connect, quote fetch, quote collection, and saved snapshot list.
+- `Paper Trade` — forward paper sessions, live quote marks, manual test marks, and equity/PnL history.
 - `Options` — simulation-only options payoff strategy replay.
 - `Congress` — local congressional disclosure replay and stored disclosure preview.
 

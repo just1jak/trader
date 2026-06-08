@@ -713,6 +713,51 @@ button {
   word-break: break-word;
 }
 
+.paper-session-list li {
+  display: block;
+}
+
+.paper-session-button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  width: 100%;
+  padding: 10px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.025);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.paper-session-button:hover,
+.paper-session-button.is-active {
+  background: rgba(55, 255, 107, 0.07);
+  border-color: rgba(55, 255, 107, 0.24);
+}
+
+.paper-session-button span,
+.paper-session-button strong,
+.paper-session-button em {
+  min-width: 0;
+}
+
+.paper-session-button span {
+  color: #f3f7f3;
+}
+
+.paper-session-button strong {
+  text-align: right;
+}
+
+.paper-session-button em {
+  grid-column: 1 / -1;
+  color: var(--green);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 720;
+}
+
 .provider-card {
   grid-column: span 1;
 }
