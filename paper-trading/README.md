@@ -47,7 +47,7 @@ Use the frontend `Settings` page to enter provider details. The backend saves th
 Supported settings today:
 
 - E*TRADE OAuth market-data credentials for quotes, expirations, and option chains.
-- Tradovate credentials for historical futures candles.
+- Tradovate credentials for historical futures candles: `TRADOVATE_USERNAME`, `TRADOVATE_PASSWORD`, `TRADOVATE_BASE_URL`, `TRADOVATE_APP_ID`, `TRADOVATE_APP_VERSION`, `TRADOVATE_DEVICE_ID`, plus optional `TRADOVATE_CID` and `TRADOVATE_SECRET` when your app registration provides API app credentials. Legacy `TRADOVATE_API_KEY` and `TRADOVATE_API_SECRET` are still accepted as username/password fallbacks, but the named username/password fields are preferred.
 - Polygon API key and optional base URL for historical stock aggregate bars.
 
 Docker compose mounts `.env` into the backend container so Settings changes persist across rebuilds.

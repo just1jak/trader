@@ -16,36 +16,56 @@ class TradovateConfigError(RuntimeError):
 class TradovateClient:
     def __init__(self):
         self.base_url = _setting('TRADOVATE_BASE_URL', Config.TRADOVATE_BASE_URL).rstrip('/')
-        self.api_key = _setting('TRADOVATE_API_KEY', Config.TRADOVATE_API_KEY)
-        self.api_secret = _setting('TRADOVATE_API_SECRET', Config.TRADOVATE_API_SECRET)
+        self.username = _first_setting('TRADOVATE_USERNAME', 'TRADOVATE_API_KEY')
+        self.password = _first_setting('TRADOVATE_PASSWORD', 'TRADOVATE_API_SECRET')
+        self.app_id = _setting('TRADOVATE_APP_ID', Config.TRADOVATE_APP_ID) or 'papertradingwebapp'
+        self.app_version = _setting('TRADOVATE_APP_VERSION', Config.TRADOVATE_APP_VERSION) or '1.0.0'
+        self.cid = _setting('TRADOVATE_CID', Config.TRADOVATE_CID)
+        self.api_secret = _setting('TRADOVATE_SECRET', Config.TRADOVATE_SECRET)
+        self.device_id = _setting('TRADOVATE_DEVICE_ID', Config.TRADOVATE_DEVICE_ID) or 'papertrading-web'
         self.access_token = None
+        self.md_access_token = None
         self.session = requests.Session()
         self._authenticate()
 
     def _authenticate(self):
         """Authenticate with Tradovate and store access token."""
-        if not self.api_key or not self.api_secret:
-            raise TradovateConfigError('Tradovate API key and secret are not configured.')
+        if not self.username or not self.password:
+            raise TradovateConfigError(
+                'Tradovate username and password are not configured. Save TRADOVATE_USERNAME and '
+                'TRADOVATE_PASSWORD in Settings. Legacy TRADOVATE_API_KEY/API_SECRET are only used as fallbacks.'
+            )
 
         auth_url = f"{self.base_url}/auth/accesstokenrequest"
         payload = {
-            "name": self.api_key,
-            "password": self.api_secret,
-            "appId": "papertradingwebapp",
-            "version": "1.0.0",
-            "deviceId": "papertrading-web",
-            "deviceType": "Browser"
+            "name": self.username,
+            "password": self.password,
+            "appId": self.app_id,
+            "appVersion": self.app_version,
+            "deviceId": self.device_id,
         }
+        if self.cid:
+            payload['cid'] = self.cid
+        if self.api_secret:
+            payload['sec'] = self.api_secret
         try:
-            response = self.session.post(auth_url, json=payload, timeout=20)
-            response.raise_for_status()
+            response = self.session.post(
+                auth_url,
+                json=payload,
+                headers={'Accept': 'application/json', 'Content-Type': 'application/json'},
+                timeout=20,
+            )
             data = response.json()
         except requests.RequestException as exc:
             raise TradovateConfigError(f'Tradovate authentication request failed: {exc}') from exc
         except ValueError as exc:
             raise TradovateConfigError('Tradovate authentication returned a non-JSON response.') from exc
 
+        if response.status_code >= 400:
+            message = data.get('errorText') or data.get('error') or data.get('message') or response.reason
+            raise TradovateConfigError(f'Tradovate authentication failed ({response.status_code}): {message}')
         self.access_token = data.get('accessToken')
+        self.md_access_token = data.get('mdAccessToken') or self.access_token
         if not self.access_token:
             message = data.get('errorText') or data.get('error') or data.get('message') or 'No access token returned.'
             raise TradovateConfigError(f'Tradovate authentication failed: {message}')
@@ -53,10 +73,13 @@ class TradovateClient:
             'Authorization': f'Bearer {self.access_token}'
         })
 
-    def _get(self, endpoint, params=None):
+    def _get(self, endpoint, params=None, token=None):
         url = f"{self.base_url}{endpoint}"
+        headers = {}
+        if token or self.access_token:
+            headers['Authorization'] = f'Bearer {token or self.access_token}'
         try:
-            response = self.session.get(url, params=params, timeout=20)
+            response = self.session.get(url, params=params, headers=headers, timeout=20)
             response.raise_for_status()
             return response.json()
         except requests.RequestException as exc:
@@ -78,7 +101,7 @@ class TradovateClient:
             "from": from_timestamp,
             "to": to_timestamp
         }
-        data = self._get(endpoint, params=params)
+        data = self._get(endpoint, params=params, token=self.md_access_token)
         if isinstance(data, dict) and 'errorText' in data:
             raise TradovateConfigError(f"Tradovate historic request failed: {data['errorText']}")
         if isinstance(data, dict) and 'candles' in data:
@@ -112,3 +135,11 @@ def _setting(key, fallback=None):
     if has_app_context():
         return current_app.config.get(key, fallback)
     return os.getenv(key, fallback)
+
+
+def _first_setting(*keys):
+    for key in keys:
+        value = _setting(key)
+        if value:
+            return value
+    return None

@@ -27,6 +27,7 @@ All routes are mounted under `/api/v1`.
   - Body shape: `{ "values": { "ENV_KEY": "value" } }`.
   - Supported provider keys: `etrade`, `tradovate`, `polygon`.
   - Blank submitted fields are ignored, so a blank saved secret input keeps the existing value.
+  - Tradovate prefers `TRADOVATE_USERNAME` and `TRADOVATE_PASSWORD`, with optional `TRADOVATE_CID` and `TRADOVATE_SECRET` for app registration credentials. Legacy `TRADOVATE_API_KEY` and `TRADOVATE_API_SECRET` remain username/password fallbacks.
 
 ## Data Source Diagnostics
 

@@ -6,6 +6,13 @@ load_dotenv()  # take environment variables from .env.
 class Config:
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key')
     CORS_ORIGINS = os.getenv('CORS_ORIGINS', '*')
+    TRADOVATE_USERNAME = os.getenv('TRADOVATE_USERNAME')
+    TRADOVATE_PASSWORD = os.getenv('TRADOVATE_PASSWORD')
+    TRADOVATE_APP_ID = os.getenv('TRADOVATE_APP_ID', 'papertradingwebapp')
+    TRADOVATE_APP_VERSION = os.getenv('TRADOVATE_APP_VERSION', '1.0.0')
+    TRADOVATE_CID = os.getenv('TRADOVATE_CID')
+    TRADOVATE_SECRET = os.getenv('TRADOVATE_SECRET')
+    TRADOVATE_DEVICE_ID = os.getenv('TRADOVATE_DEVICE_ID', 'papertrading-web')
     TRADOVATE_API_KEY = os.getenv('TRADOVATE_API_KEY')
     TRADOVATE_API_SECRET = os.getenv('TRADOVATE_API_SECRET')
     TRADOVATE_BASE_URL = os.getenv('TRADOVATE_BASE_URL', 'https://demo.tradovateapi.com/v1')

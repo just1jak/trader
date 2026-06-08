@@ -24,13 +24,21 @@ PROVIDERS = {
     },
     'tradovate': {
         'label': 'Tradovate',
-        'description': 'Historical futures candle source for backtests.',
+        'description': 'Historical futures candle source for backtests. Uses Tradovate username/password plus optional API cid/sec fields.',
         'fields': {
             'TRADOVATE_BASE_URL': {'label': 'Base URL', 'secret': False, 'default': 'https://demo.tradovateapi.com/v1'},
-            'TRADOVATE_API_KEY': {'label': 'API key / username', 'secret': True},
-            'TRADOVATE_API_SECRET': {'label': 'API secret / password', 'secret': True},
+            'TRADOVATE_USERNAME': {'label': 'Username', 'secret': True},
+            'TRADOVATE_PASSWORD': {'label': 'Password / API password', 'secret': True},
+            'TRADOVATE_APP_ID': {'label': 'App ID', 'secret': False, 'default': 'papertradingwebapp'},
+            'TRADOVATE_APP_VERSION': {'label': 'App version', 'secret': False, 'default': '1.0.0'},
+            'TRADOVATE_CID': {'label': 'Client app id / cid', 'secret': True},
+            'TRADOVATE_SECRET': {'label': 'API secret / sec', 'secret': True},
+            'TRADOVATE_DEVICE_ID': {'label': 'Device ID', 'secret': False, 'default': 'papertrading-web'},
+            'TRADOVATE_API_KEY': {'label': 'Legacy username fallback', 'secret': True},
+            'TRADOVATE_API_SECRET': {'label': 'Legacy password fallback', 'secret': True},
         },
-        'required': ['TRADOVATE_API_KEY', 'TRADOVATE_API_SECRET'],
+        'required': ['TRADOVATE_USERNAME', 'TRADOVATE_PASSWORD'],
+        'legacy_required': ['TRADOVATE_API_KEY', 'TRADOVATE_API_SECRET'],
     },
     'polygon': {
         'label': 'Polygon',
@@ -55,7 +63,7 @@ def provider_status():
                 'key': env_key,
                 'label': meta['label'],
                 'secret': meta.get('secret', False),
-                'configured': bool(value),
+                'configured': _has_real_value(value, allow_default=True),
                 'value': _masked(value) if meta.get('secret') else value,
             })
 
@@ -63,7 +71,7 @@ def provider_status():
             'key': provider_key,
             'label': provider['label'],
             'description': provider['description'],
-            'configured': all(env_values.get(key) or os.getenv(key) for key in provider['required']),
+            'configured': _provider_configured(provider, env_values),
             'fields': fields,
         })
     return providers
@@ -147,6 +155,36 @@ def _write_env_file(values):
             output.append(f'{key}={value}')
 
     ENV_PATH.write_text('\n'.join(output) + '\n')
+
+
+def _provider_configured(provider, env_values):
+    primary = all(_has_real_value(env_values.get(key) or os.getenv(key)) for key in provider['required'])
+    legacy = provider.get('legacy_required')
+    if primary or not legacy:
+        return primary
+    return all(_has_real_value(env_values.get(key) or os.getenv(key)) for key in legacy)
+
+
+def _has_real_value(value, allow_default=False):
+    if value is None:
+        return False
+    normalized = str(value).strip()
+    if not normalized:
+        return False
+    if allow_default and normalized.startswith(('http://', 'https://')):
+        return True
+
+    lowered = normalized.lower()
+    placeholder_tokens = (
+        'your_',
+        '_here',
+        'change-me',
+        'changeme',
+        'change_in_production',
+        'placeholder',
+        'example',
+    )
+    return not any(token in lowered for token in placeholder_tokens)
 
 
 def _masked(value):

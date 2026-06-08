@@ -193,7 +193,7 @@ The React dashboard posts to `POST /api/v1/backtest` and includes a data-source 
 The dashboard also includes a `Settings` module for broker and market-data credentials:
 
 - E*TRADE stores read-only OAuth market-data credentials for quote, expiration, and option-chain routes.
-- Tradovate stores historical futures data credentials used by backtests.
+- Tradovate stores historical futures data credentials used by backtests. Prefer `TRADOVATE_USERNAME` and `TRADOVATE_PASSWORD`; optional app registration fields are `TRADOVATE_CID` and `TRADOVATE_SECRET`. The older `TRADOVATE_API_KEY` and `TRADOVATE_API_SECRET` names are still supported as username/password fallbacks.
 - Polygon stores the API key and optional base URL used by stock candle backtests.
 - Secret fields are masked when read back by the browser. Leaving a saved secret field blank keeps the existing value.
 
