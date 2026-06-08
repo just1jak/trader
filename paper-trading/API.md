@@ -7,6 +7,7 @@ All routes are mounted under `/api/v1`.
 - `POST /backtest`
   - Runs an existing strategy module against OHLCV candles.
   - `source=sample` uses `data/sample_ES_1min.csv`.
+  - `source=coinbase` uses public no-key Coinbase crypto OHLCV candles for products such as `BTC-USD` and `ETH-USD`.
   - `source=tradovate` uses the existing Tradovate client.
   - `source=polygon` uses Polygon aggregate bars for stock symbols.
   - `source=cache` uses locally collected candles from `data/market_data.sqlite`.
@@ -33,15 +34,15 @@ All routes are mounted under `/api/v1`.
 
 - `GET /data/sources`
   - Returns readiness status, configured status, row counts, and a preview or error for each source.
-  - Source keys: `sample`, `tradovate`, `etrade_market_data`, `polygon`, `cache`, and `congress`.
+  - Source keys: `sample`, `coinbase`, `tradovate`, `etrade_market_data`, `polygon`, `cache`, and `congress`.
   - Query param: `probe=true` performs lightweight external checks for configured providers.
   - Use this before trusting a backtest run; it exposes missing credentials, rejected broker auth, empty congressional data, and stale local stores.
 
 ## Candle Cache
 
 - `POST /market/candles/collect`
-  - Body shape: `{ "source": "sample", "symbol": "ES", "timeframe": "1min", "from": "2025-01-02", "to": "2025-01-02" }`.
-  - Supported collection sources: `sample`, `tradovate`, and `polygon`.
+  - Body shape: `{ "source": "coinbase", "symbol": "BTC-USD", "timeframe": "1d", "from": "2025-01-02", "to": "2025-01-10" }`.
+  - Supported collection sources: `sample`, `coinbase`, `tradovate`, and `polygon`.
   - Stores OHLCV rows in `data/market_data.sqlite`.
 
 - `GET /market/candles/cache`
@@ -103,7 +104,7 @@ Routes:
   - Simulation-only options payoff proxy using underlying OHLCV.
   - Required fields: `symbol`, `from`, `to`, `option_type`, `strike`, `premium`.
   - Optional fields: `timeframe`, `source`, `contracts`, `multiplier`, `strategy`, `short_strike`, `short_premium`.
-  - Supported sources: `sample`, `tradovate`, `polygon`, and `cache`.
+  - Supported sources: `sample`, `coinbase`, `tradovate`, `polygon`, and `cache`.
   - Supported strategies: `long_call`, `long_put`, `bull_call_spread`, `bear_put_spread`, `long_straddle`.
   - This does not model historical option bid/ask, implied volatility, theta decay, early exercise, assignment, liquidity, or slippage.
 

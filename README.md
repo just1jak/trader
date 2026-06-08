@@ -24,6 +24,7 @@ workflows. Live order execution is intentionally not wired here.
 - Flask + Flask-RESTX paper-trading API
 - React + Vite dashboard frontend
 - Local OHLCV sample data for credential-free backtests
+- Public no-key Coinbase crypto OHLCV candle path
 - Tradovate historical futures data path
 - Polygon historical stock aggregate data path
 - Read-only E*TRADE quote and options-chain API layer
@@ -47,6 +48,7 @@ workflows. Live order execution is intentionally not wired here.
 - `paper-trading/backend/api/routes.py` — Flask API routes
 - `paper-trading/backend/utils/etrade.py` — read-only E*TRADE OAuth market client
 - `paper-trading/backend/utils/etrade_collection.py` — E*TRADE quote snapshot storage and summaries
+- `paper-trading/backend/utils/coinbase.py` — public crypto OHLCV candle client
 - `paper-trading/backend/utils/polygon.py` — Polygon historical aggregate client
 - `paper-trading/backend/utils/backtest_data.py` — local sample candle loading
 - `paper-trading/backend/utils/options_backtest.py` — options payoff simulation
@@ -61,6 +63,7 @@ All paper-trading API routes are mounted under `/api/v1`.
 - `POST /api/v1/backtest`
   - Runs one of the existing strategy modules against OHLCV candles.
   - `source=sample` uses `paper-trading/data/sample_ES_1min.csv`.
+  - `source=coinbase` uses public no-key Coinbase crypto OHLCV candles for products such as `BTC-USD` and `ETH-USD`.
   - `source=tradovate` uses the existing Tradovate client.
   - `source=polygon` uses Polygon aggregate bars for stock symbols such as `AAPL`, `SPY`, and `QQQ`.
   - `source=cache` replays previously collected OHLCV bars from `paper-trading/data/market_data.sqlite`.
@@ -71,8 +74,8 @@ All paper-trading API routes are mounted under `/api/v1`.
   - Query params: `symbol`, `timeframe`, `from`, `to`, `source`.
 
 - `POST /api/v1/market/candles/collect`
-  - Fetches candles from `sample`, `tradovate`, or `polygon` and stores them in the local candle cache.
-  - Body shape: `{ "source": "polygon", "symbol": "AAPL", "timeframe": "1d", "from": "2025-01-02", "to": "2025-01-10" }`.
+  - Fetches candles from `sample`, `coinbase`, `tradovate`, or `polygon` and stores them in the local candle cache.
+  - Body shape: `{ "source": "coinbase", "symbol": "BTC-USD", "timeframe": "1d", "from": "2025-01-02", "to": "2025-01-10" }`.
 
 - `GET /api/v1/market/candles/cache`
   - Lists cached candle datasets and row counts.
@@ -82,7 +85,7 @@ All paper-trading API routes are mounted under `/api/v1`.
 - `GET /api/v1/data/sources`
   - Returns configured status, row counts, and a preview/error for each source.
   - Add `?probe=true` to make a lightweight test request against configured external providers.
-  - Current source keys: `sample`, `tradovate`, `etrade_market_data`, `polygon`, `cache`, and `congress`.
+  - Current source keys: `sample`, `coinbase`, `tradovate`, `etrade_market_data`, `polygon`, `cache`, and `congress`.
   - This route is the fastest way to confirm whether the dashboard has real usable data before trusting a backtest.
 
 ### E*TRADE Market Data
@@ -186,6 +189,7 @@ Routes:
 The React dashboard posts to `POST /api/v1/backtest` and includes a data-source selector:
 
 - `Sample CSV` — uses the local ES sample data and works without broker credentials.
+- `Coinbase crypto` — uses no-key public Coinbase candles for products such as `BTC-USD` and `ETH-USD`.
 - `Tradovate` — uses the existing Tradovate historical-data client when credentials are configured.
 - `Polygon` — uses stock aggregate candles when a Polygon API key is configured.
 - `Cached candles` — replays OHLCV bars collected through the backtest `Collect candles` action.
@@ -301,6 +305,7 @@ The production frontend is served by nginx. Browser requests to `/api/` are prox
 
 - Backend syntax checks pass with `python3 -m py_compile` when `PYTHONPYCACHEPREFIX` points to a writable temp directory.
 - Local sample candle loading and the options payoff simulation have been smoke-tested.
+- Coinbase public BTC-USD candles have been smoke-tested through preview, collect, cache replay, strategy backtest, and options replay routes.
 - E*TRADE quote collection has been smoke-tested against the saved OAuth token; sandbox responses can be historical/canned, and expired tokens return a reconnect message.
 - Tradovate and Polygon fail cleanly with JSON setup errors when credentials are missing or rejected.
 - The candle cache has been smoke-tested by collecting sample ES candles and replaying a `source=cache` backtest.
@@ -313,3 +318,4 @@ The production frontend is served by nginx. Browser requests to `/api/` are prox
 - [E*TRADE OAuth Developer Guide](https://developer.etrade.com/getting-started/developer-guides)
 - [E*TRADE Market Option Chains API](https://apisb.etrade.com/docs/api/market/api-market-v1.html)
 - [E*TRADE Quote API](https://apisb.etrade.com/docs/api/market/api-quote-v1.html)
+- [Coinbase Exchange Get Product Candles](https://docs.cdp.coinbase.com/exchange/reference/exchangerestapi_getproductcandles)

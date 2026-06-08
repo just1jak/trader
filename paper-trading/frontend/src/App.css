@@ -787,6 +787,20 @@ button {
   align-items: center;
 }
 
+.oauth-link {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  color: var(--green);
+  font-size: 13px;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.oauth-link:hover {
+  color: #f3f7f3;
+}
+
 .live-json {
   max-height: 260px;
   margin: 0;

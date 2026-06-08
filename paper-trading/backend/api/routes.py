@@ -11,6 +11,7 @@ from utils.candle_cache import (
     load_cached_candles,
     save_cached_candles,
 )
+from utils.coinbase import CoinbaseClient, CoinbaseConfigError
 from utils.congressional import list_congressional_trades, run_congressional_backtest
 from utils.congressional_ingest_bridge import congressional_disclosure_counts, sync_congressional_disclosures
 from utils.etrade import ETradeClient, ETradeConfigError
@@ -52,7 +53,7 @@ backtest_input = api.model('BacktestInput', {
     'timeframe': fields.String(required=True, description='Candle size, e.g., 1min, 5min, 1h'),
     'strategy': fields.String(required=True, description='Strategy module name'),
     'params': fields.Raw(required=True, description='Strategy parameters as JSON object'),
-    'source': fields.String(required=False, description='sample, tradovate, polygon, or cache', default='sample'),
+    'source': fields.String(required=False, description='sample, coinbase, tradovate, polygon, or cache', default='sample'),
 })
 
 options_backtest_input = api.model('OptionsBacktestInput', {
@@ -60,7 +61,7 @@ options_backtest_input = api.model('OptionsBacktestInput', {
     'from': fields.String(required=True, description='Start date (YYYY-MM-DD)'),
     'to': fields.String(required=True, description='End date (YYYY-MM-DD)'),
     'timeframe': fields.String(required=False, description='Candle size', default='1min'),
-    'source': fields.String(required=False, description='sample, tradovate, polygon, or cache', default='sample'),
+    'source': fields.String(required=False, description='sample, coinbase, tradovate, polygon, or cache', default='sample'),
     'option_type': fields.String(required=True, description='CALL or PUT'),
     'strike': fields.Float(required=True, description='Option strike'),
     'premium': fields.Float(required=True, description='Entry premium per contract'),
@@ -89,7 +90,7 @@ candle_collect_input = api.model('CandleCollectInput', {
     'from': fields.String(required=True, description='Start date (YYYY-MM-DD)'),
     'to': fields.String(required=True, description='End date (YYYY-MM-DD)'),
     'timeframe': fields.String(required=True, description='Candle size, e.g., 1min, 5min, 1h, 1d'),
-    'source': fields.String(required=True, description='Provider to collect from: sample, tradovate, or polygon'),
+    'source': fields.String(required=True, description='Provider to collect from: sample, coinbase, tradovate, or polygon'),
 })
 
 paper_session_input = api.model('PaperSessionInput', {
@@ -128,6 +129,7 @@ class HealthResource(Resource):
             'live_trading_enabled': False,
             'sources': {
                 'sample': True,
+                'coinbase': True,
                 'tradovate': _provider_configured('tradovate'),
                 'etrade_market_data': _provider_configured('etrade'),
                 'polygon': _provider_configured('polygon'),
@@ -428,7 +430,7 @@ class BacktestResource(Resource):
             return _json_ready(results), 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
-        except (TradovateConfigError, PolygonConfigError) as exc:
+        except (CoinbaseConfigError, TradovateConfigError, PolygonConfigError) as exc:
             return {'error': str(exc)}, 400
         except Exception as exc:
             return {'error': str(exc)}, 500
@@ -448,7 +450,7 @@ class BacktestDataResource(Resource):
         if source == 'etrade':
             return {
                 'error': 'E*TRADE market APIs provide quote and option-chain snapshots here, not historical OHLCV candles.',
-                'available_sources': ['sample', 'tradovate', 'polygon', 'cache'],
+                'available_sources': ['sample', 'coinbase', 'tradovate', 'polygon', 'cache'],
             }, 400
 
         try:
@@ -468,7 +470,7 @@ class BacktestDataResource(Resource):
             }, 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
-        except (TradovateConfigError, PolygonConfigError) as exc:
+        except (CoinbaseConfigError, TradovateConfigError, PolygonConfigError) as exc:
             return {'error': str(exc)}, 400
 
 
@@ -514,7 +516,7 @@ class CandleCollectResource(Resource):
             }, 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
-        except (TradovateConfigError, PolygonConfigError) as exc:
+        except (CoinbaseConfigError, TradovateConfigError, PolygonConfigError) as exc:
             return {'error': str(exc)}, 400
 
 
@@ -598,7 +600,7 @@ class OptionsBacktestResource(Resource):
             return _json_ready(results), 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
-        except (TradovateConfigError, PolygonConfigError) as exc:
+        except (CoinbaseConfigError, TradovateConfigError, PolygonConfigError) as exc:
             return {'error': str(exc)}, 400
         except Exception as exc:
             return {'error': str(exc)}, 500
@@ -662,6 +664,25 @@ def _data_source_status(probe=False):
         ))
     except Exception as exc:
         sources.append(_source_item('sample', 'Sample CSV', True, 'error', detail=_safe_error(exc)))
+
+    try:
+        coinbase = CoinbaseClient().get_candles(
+            product_id='BTC-USD',
+            timeframe='1d',
+            start='2025-01-02',
+            end='2025-01-10',
+        )
+        sources.append(_source_item(
+            key='coinbase',
+            label='Coinbase crypto candles',
+            configured=True,
+            status='ok' if not coinbase.empty else 'empty',
+            rows=len(coinbase),
+            detail='Public no-key crypto OHLCV candles are available for backtests and collection.',
+            preview=_candle_preview(coinbase),
+        ))
+    except Exception as exc:
+        sources.append(_source_item('coinbase', 'Coinbase crypto candles', True, 'error', detail=_safe_error(exc)))
 
     tradovate_configured = bool(providers.get('tradovate', {}).get('configured'))
     if not tradovate_configured:
@@ -838,6 +859,13 @@ def _load_backtest_candles(payload):
         return load_sample_candles(
             symbol=payload.get('symbol', 'ES'),
             timeframe=payload.get('timeframe', '1min'),
+            start=payload.get('from'),
+            end=payload.get('to'),
+        )
+    if source == 'coinbase':
+        return CoinbaseClient().get_candles(
+            product_id=payload.get('symbol', 'BTC-USD'),
+            timeframe=payload.get('timeframe', '1d'),
             start=payload.get('from'),
             end=payload.get('to'),
         )

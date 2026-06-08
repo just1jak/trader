@@ -18,7 +18,19 @@ export function useApi() {
         ...options,
       });
       if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        let message = `API error: ${response.status}`;
+        const text = await response.text();
+        try {
+          const payload = text ? JSON.parse(text) : null;
+          if (payload?.error) {
+            message = String(payload.error);
+          } else if (payload?.message) {
+            message = String(payload.message);
+          }
+        } catch {
+          if (text) message = text.slice(0, 240);
+        }
+        throw new Error(message);
       }
       const data = await response.json();
       setLoading(false);

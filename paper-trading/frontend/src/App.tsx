@@ -17,7 +17,7 @@ type BacktestForm = {
   timeframe: string;
   strategy: StrategyKey;
   params: Record<string, number | string | boolean>;
-  source: 'sample' | 'tradovate' | 'polygon' | 'cache';
+  source: 'sample' | 'coinbase' | 'tradovate' | 'polygon' | 'cache';
 };
 
 type Metric = {
@@ -171,7 +171,7 @@ type OptionsForm = {
   symbol: string;
   from: string;
   to: string;
-  source: 'sample' | 'tradovate' | 'polygon' | 'cache';
+  source: 'sample' | 'coinbase' | 'tradovate' | 'polygon' | 'cache';
   timeframe: string;
   strategy: 'long_call' | 'long_put' | 'bull_call_spread' | 'bear_put_spread' | 'long_straddle';
   option_type: 'CALL' | 'PUT';
@@ -491,6 +491,7 @@ function App() {
   const [paperMessage, setPaperMessage] = useState('Create a paper session, then mark it from live quotes or a manual price.');
   const [oauthVerifier, setOauthVerifier] = useState('');
   const [oauthMessage, setOauthMessage] = useState('Start OAuth after saving your E*TRADE consumer key and secret.');
+  const [oauthAuthorizeUrl, setOauthAuthorizeUrl] = useState('');
   const [optionForm, setOptionForm] = useState<OptionsForm>({
     symbol: 'ES',
     from: '2025-01-02',
@@ -567,6 +568,19 @@ function App() {
     }
     if (field === 'source') {
       const source = value as BacktestForm['source'];
+      if (source === 'coinbase') {
+        setFormData((previous) => ({
+          ...previous,
+          source,
+          symbol: 'BTC-USD',
+          timeframe: '1d',
+          from: '2025-01-02',
+          to: '2025-01-31',
+          strategy: 'ma_crossover',
+          params: defaultParams.ma_crossover,
+        }));
+        return;
+      }
       setFormData((previous) => ({
         ...previous,
         source,
@@ -743,6 +757,7 @@ function App() {
     });
     if (data?.authorize_url) {
       setOauthMessage(data.message);
+      setOauthAuthorizeUrl(data.authorize_url);
       window.open(data.authorize_url, '_blank', 'noopener,noreferrer');
     }
   };
@@ -756,6 +771,7 @@ function App() {
       setProviderSettings(data.providers);
       setOauthVerifier('');
       setOauthMessage(data.message);
+      setOauthAuthorizeUrl('');
       const health = await callApi<ApiHealth>('/api/v1/health');
       if (health) setApiHealth(health);
     }
@@ -890,6 +906,17 @@ function App() {
         next.symbol = 'AAPL';
         next.timeframe = '1d';
       }
+      if (field === 'source' && value === 'coinbase') {
+        next.symbol = 'BTC-USD';
+        next.timeframe = '1d';
+        next.from = '2025-01-02';
+        next.to = '2025-01-10';
+        next.strike = '95000';
+        next.premium = '2500';
+        next.short_strike = '100000';
+        next.short_premium = '1000';
+        next.multiplier = '1';
+      }
       if (field === 'source' && value === 'sample') {
         next.symbol = 'ES';
       }
@@ -1020,6 +1047,7 @@ function App() {
             liveSnapshots={liveSnapshots}
             liveSymbols={liveSymbols}
             oauthMessage={oauthMessage}
+            oauthAuthorizeUrl={oauthAuthorizeUrl}
             oauthVerifier={oauthVerifier}
             paperForm={paperForm}
             paperMarks={paperMarks}
@@ -1061,6 +1089,8 @@ function App() {
                 <option value="NQ">NQ - E-mini Nasdaq 100</option>
                 <option value="CL">CL - Crude Oil</option>
                 <option value="GC">GC - Gold</option>
+                <option value="BTC-USD">BTC-USD - Bitcoin</option>
+                <option value="ETH-USD">ETH-USD - Ethereum</option>
                 <option value="AAPL">AAPL - Apple</option>
                 <option value="SPY">SPY - S&P 500 ETF</option>
                 <option value="QQQ">QQQ - Nasdaq 100 ETF</option>
@@ -1099,6 +1129,7 @@ function App() {
             <Field label="Data source">
               <select value={formData.source} onChange={(event) => updateField('source', event.target.value)}>
                 <option value="sample">Sample CSV</option>
+                <option value="coinbase">Coinbase crypto</option>
                 <option value="tradovate">Tradovate</option>
                 <option value="polygon">Polygon</option>
                 <option value="cache">Cached candles</option>
@@ -1254,6 +1285,7 @@ function ModulePanel({
   liveSnapshots,
   liveSymbols,
   oauthMessage,
+  oauthAuthorizeUrl,
   oauthVerifier,
   paperForm,
   paperMarks,
@@ -1303,6 +1335,7 @@ function ModulePanel({
   liveSymbols: string;
   markPaperSession: (mode: 'live' | 'manual') => void;
   oauthMessage: string;
+  oauthAuthorizeUrl: string;
   oauthVerifier: string;
   paperForm: PaperForm;
   paperMarks: PaperMark[];
@@ -1371,6 +1404,11 @@ function ModulePanel({
                   />
                 </label>
               </div>
+              {oauthAuthorizeUrl ? (
+                <a className="oauth-link" href={oauthAuthorizeUrl} rel="noreferrer" target="_blank">
+                  Open E*TRADE authorization
+                </a>
+              ) : null}
               <div className="action-row">
                 <button className="run-button" type="button" onClick={startEtradeOAuth}>
                   <PlayIcon />
@@ -1618,6 +1656,7 @@ function ModulePanel({
                   <span>Data source</span>
                   <select value={optionForm.source} onChange={(event) => updateOptionField('source', event.target.value)}>
                     <option value="sample">Sample CSV</option>
+                    <option value="coinbase">Coinbase crypto</option>
                     <option value="tradovate">Tradovate</option>
                     <option value="polygon">Polygon</option>
                     <option value="cache">Cached candles</option>
