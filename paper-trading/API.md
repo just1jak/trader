@@ -44,6 +44,12 @@ All routes are mounted under `/api/v1`.
   - Query param: `probe=true` performs lightweight external checks for configured providers.
   - Use this before trusting a backtest run; it exposes missing credentials, rejected broker auth, empty congressional data, and stale local stores.
 
+- `GET /data/smoke-test`
+  - Runs a read-only full source check and returns `pass`, `warning`, `blocked`, or `fail` for the major data paths.
+  - Checks sample CSV, Coinbase public candles, Yahoo public candles, cached candle replay, congressional disclosure rows, E*TRADE quote access, Tradovate futures candles, and Polygon aggregate bars.
+  - Public and local checks can pass without credentials. E*TRADE, Tradovate, and Polygon return `blocked` until their required Settings values are saved and accepted by the provider.
+  - This endpoint does not place trades, submit orders, clear credentials, or write candle rows.
+
 ## Candle Cache
 
 - `POST /market/candles/collect`

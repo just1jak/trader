@@ -30,7 +30,7 @@ workflows. Live order execution is intentionally not wired here.
 - Polygon historical stock aggregate data path
 - Read-only E*TRADE quote and options-chain API layer
 - E*TRADE OAuth connect flow and snapshot collection store
-- Data-source diagnostics API and dashboard page
+- Data-source diagnostics and full source smoke-test API/dashboard page
 - Local OHLCV candle cache with collect/replay routes
 - Forward paper-trading sessions marked from live quotes or manual prices
 - Simulation-only options strategy payoff backtester
@@ -90,6 +90,12 @@ All paper-trading API routes are mounted under `/api/v1`.
   - Add `?probe=true` to make a lightweight test request against configured external providers.
   - Current source keys: `sample`, `coinbase`, `yahoo`, `tradovate`, `etrade_market_data`, `polygon`, `cache`, and `congress`.
   - This route is the fastest way to confirm whether the dashboard has real usable data before trusting a backtest.
+
+- `GET /api/v1/data/smoke-test`
+  - Runs a read-only full source check across sample CSV, Coinbase, Yahoo Finance, cache replay, congressional disclosures, E*TRADE, Tradovate, and Polygon.
+  - Returns `pass`, `warning`, `blocked`, or `fail` per source plus a summary of blocked or failed providers.
+  - E*TRADE, Tradovate, and Polygon report `blocked` until valid credentials are saved and accepted by those providers.
+  - This route verifies source access only. It does not place trades, clear credentials, or write new candle rows.
 
 ### E*TRADE Market Data
 
@@ -209,7 +215,7 @@ The dashboard also includes a `Settings` module for broker and market-data crede
 Additional dashboard modules:
 
 - `Live Data` — E*TRADE OAuth connect, quote fetch, quote collection, and saved snapshot list.
-- `Data Sources` — source readiness cards, row counts, sample previews, and probe errors.
+- `Data Sources` — source readiness cards, row counts, sample previews, probe errors, and the full source-check matrix.
 - `Backtest` — includes a `Collect candles` action that stores the selected provider/date range into the local cache.
 - `Paper Trade` — forward paper sessions, live quote marks, manual test marks, and equity/PnL history.
 - `Options` — simulation-only options payoff strategy replay.

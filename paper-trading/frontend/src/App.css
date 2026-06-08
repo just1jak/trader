@@ -833,6 +833,109 @@ button {
   font-weight: 900;
 }
 
+.smoke-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.smoke-summary span {
+  display: grid;
+  gap: 3px;
+  min-height: 64px;
+  padding: 12px;
+  color: #c5d0c8;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 820;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.smoke-summary strong {
+  color: #ffffff;
+  font-size: 24px;
+  line-height: 1;
+}
+
+.smoke-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.smoke-check {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.026);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+}
+
+.smoke-check > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.smoke-check strong {
+  color: #ffffff;
+  font-size: 13px;
+}
+
+.smoke-check span,
+.smoke-check small {
+  color: #a5b1aa;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.smoke-check em {
+  width: fit-content;
+  padding: 4px 7px;
+  color: #d5ded7;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.smoke-check p {
+  margin: 0;
+  color: #dbe5dc;
+  font-size: 13px;
+}
+
+.smoke-check.is-pass {
+  border-color: rgba(55, 255, 107, 0.28);
+}
+
+.smoke-check.is-pass em {
+  color: var(--green);
+  background: rgba(55, 255, 107, 0.09);
+}
+
+.smoke-check.is-blocked,
+.smoke-check.is-fail {
+  border-color: rgba(255, 45, 45, 0.32);
+}
+
+.smoke-check.is-blocked em,
+.smoke-check.is-fail em {
+  color: var(--red);
+  background: rgba(255, 45, 45, 0.1);
+}
+
+.smoke-check.is-warning {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
 .live-json {
   max-height: 260px;
   margin: 0;
@@ -1713,6 +1816,11 @@ tbody tr.is-selected {
   .module-form-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .smoke-summary,
+  .smoke-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 860px) {
@@ -1796,6 +1904,11 @@ tbody tr.is-selected {
   }
 
   .module-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .smoke-summary,
+  .smoke-grid {
     grid-template-columns: 1fr;
   }
 

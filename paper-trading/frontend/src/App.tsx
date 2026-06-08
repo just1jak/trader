@@ -127,6 +127,33 @@ type SourceDiagnostic = {
   next_steps?: string[];
 };
 
+type SourceSmokeCheck = {
+  key: string;
+  label: string;
+  category: string;
+  status: 'pass' | 'warning' | 'blocked' | 'fail';
+  rows: number;
+  detail: string;
+  action: string;
+  expected: string;
+  sample: Record<string, unknown>;
+};
+
+type SourceSmokeResult = {
+  summary: {
+    pass: number;
+    warning: number;
+    blocked: number;
+    fail: number;
+    total: number;
+    ready: boolean;
+    blocked_sources: string[];
+    failed_sources: string[];
+  };
+  checks: SourceSmokeCheck[];
+  message: string;
+};
+
 type PaperStrategy = 'forward_long' | 'forward_short' | 'observe_only';
 
 type PaperForm = {
@@ -471,6 +498,8 @@ function App() {
   const [dataPreview, setDataPreview] = useState<DataPreview | null>(null);
   const [sourceDiagnostics, setSourceDiagnostics] = useState<SourceDiagnostic[]>([]);
   const [sourceProbeMessage, setSourceProbeMessage] = useState('Source diagnostics have not been probed yet.');
+  const [sourceSmokeResult, setSourceSmokeResult] = useState<SourceSmokeResult | null>(null);
+  const [sourceSmokeMessage, setSourceSmokeMessage] = useState('Full source check has not been run yet.');
   const [providerSettings, setProviderSettings] = useState<ProviderSettings[]>([]);
   const [providerForms, setProviderForms] = useState<Record<string, Record<string, string>>>({});
   const [savingProvider, setSavingProvider] = useState<string | null>(null);
@@ -696,6 +725,18 @@ function App() {
         probe
           ? `Probe complete: ${data.sources.filter((source) => source.status === 'ok').length} ok, ${needsConfig.length} need config, ${errors.length} error, ${empty.length} empty.`
           : 'Ready to probe configured data sources.',
+      );
+    }
+    return data;
+  };
+
+  const runSourceSmokeTest = async () => {
+    setSourceSmokeMessage('Running full source check...');
+    const data = await callApi<SourceSmokeResult>('/api/v1/data/smoke-test');
+    if (data?.summary) {
+      setSourceSmokeResult(data);
+      setSourceSmokeMessage(
+        `Full check: ${data.summary.pass} pass, ${data.summary.blocked} blocked, ${data.summary.fail} fail, ${data.summary.warning} warning.`,
       );
     }
     return data;
@@ -1117,11 +1158,14 @@ function App() {
             selectPaperSession={selectPaperSession}
             sourceDiagnostics={sourceDiagnostics}
             sourceProbeMessage={sourceProbeMessage}
+            sourceSmokeMessage={sourceSmokeMessage}
+            sourceSmokeResult={sourceSmokeResult}
             startEtradeOAuth={startEtradeOAuth}
             updateOptionField={updateOptionField}
             updatePaperField={updatePaperField}
             updateProviderField={updateProviderField}
             loadSourceDiagnostics={loadSourceDiagnostics}
+            runSourceSmokeTest={runSourceSmokeTest}
           />
         ) : (
           <>
@@ -1357,11 +1401,14 @@ function ModulePanel({
   selectPaperSession,
   sourceDiagnostics,
   sourceProbeMessage,
+  sourceSmokeMessage,
+  sourceSmokeResult,
   startEtradeOAuth,
   updateOptionField,
   updatePaperField,
   updateProviderField,
   loadSourceDiagnostics,
+  runSourceSmokeTest,
 }: {
   activeNav: string;
   apiHealth: ApiHealth | null;
@@ -1406,11 +1453,14 @@ function ModulePanel({
   selectPaperSession: (sessionId: number) => void;
   sourceDiagnostics: SourceDiagnostic[];
   sourceProbeMessage: string;
+  sourceSmokeMessage: string;
+  sourceSmokeResult: SourceSmokeResult | null;
   startEtradeOAuth: () => void;
   updateOptionField: (field: keyof OptionsForm, value: string) => void;
   updatePaperField: (field: keyof PaperForm, value: string) => void;
   updateProviderField: (providerKey: string, fieldKey: string, value: string) => void;
   loadSourceDiagnostics: (probe?: boolean) => void;
+  runSourceSmokeTest: () => void;
 }) {
   const routeEntries = apiHealth ? Object.entries(apiHealth.routes) : [];
   const selectedPaperSession = paperSessions.find((session) => session.id === selectedPaperSessionId) ?? paperSessions[0] ?? null;
@@ -1528,11 +1578,52 @@ function ModulePanel({
                   <ChartIcon />
                   Probe sources
                 </button>
+                <button className="reset-button" type="button" onClick={runSourceSmokeTest}>
+                  <CheckIcon />
+                  Full check
+                </button>
                 <button className="reset-button" type="button" onClick={() => loadSourceDiagnostics(false)}>
                   <ResetIcon />
                   Refresh status
                 </button>
               </div>
+            </article>
+
+            <article className="module-card is-wide">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Full source check</h3>
+                  <p>{sourceSmokeMessage}</p>
+                </div>
+                <strong className={sourceSmokeResult?.summary.ready ? 'module-status-ok' : 'module-status-warn'}>
+                  {sourceSmokeResult ? (sourceSmokeResult.summary.ready ? 'all ready' : 'action needed') : 'not run'}
+                </strong>
+              </div>
+              {sourceSmokeResult ? (
+                <>
+                  <div className="smoke-summary">
+                    <span><strong>{sourceSmokeResult.summary.pass}</strong> pass</span>
+                    <span><strong>{sourceSmokeResult.summary.warning}</strong> warning</span>
+                    <span><strong>{sourceSmokeResult.summary.blocked}</strong> blocked</span>
+                    <span><strong>{sourceSmokeResult.summary.fail}</strong> fail</span>
+                  </div>
+                  <div className="smoke-grid">
+                    {sourceSmokeResult.checks.map((check) => (
+                      <div className={`smoke-check is-${check.status}`} key={check.key}>
+                        <div>
+                          <strong>{check.label}</strong>
+                          <span>{check.category.replace(/_/g, ' ')}</span>
+                        </div>
+                        <em>{check.status}</em>
+                        <p>{check.detail}</p>
+                        <small>{check.action}</small>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p>Run the full check to verify public candles, local cache replay, congressional data, and each configured provider probe.</p>
+              )}
             </article>
 
             {sourceDiagnostics.map((source) => (

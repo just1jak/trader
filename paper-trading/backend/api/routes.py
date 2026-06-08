@@ -143,6 +143,7 @@ class HealthResource(Resource):
             },
             'routes': {
                 'data_sources': '/api/v1/data/sources',
+                'data_smoke_test': '/api/v1/data/smoke-test',
                 'backtest': '/api/v1/backtest',
                 'backtest_data': '/api/v1/market/backtest-data',
                 'collect_candles': '/api/v1/market/candles/collect',
@@ -335,6 +336,18 @@ class DataSourcesResource(Resource):
         return {
             'probe': _to_bool(request.args.get('probe'), default=False),
             'sources': _data_source_status(_to_bool(request.args.get('probe'), default=False)),
+        }, 200
+
+
+@api.route('/data/smoke-test')
+class DataSmokeTestResource(Resource):
+    @api.response(200, 'Success')
+    def get(self):
+        checks = _data_source_smoke_checks()
+        return {
+            'summary': _smoke_summary(checks),
+            'checks': checks,
+            'message': 'Read-only source verification completed. Blocked providers need credentials or fresh authorization before they can return live data.',
         }, 200
 
 
@@ -912,6 +925,236 @@ def _data_source_status(probe=False):
     ))
 
     return sources
+
+
+def _data_source_smoke_checks():
+    providers = {provider['key']: provider for provider in provider_status()}
+    checks = []
+
+    checks.append(_run_smoke_check(
+        key='sample_backtest_data',
+        label='Sample CSV candles',
+        category='historical_candles',
+        expected='Load local sample candles for a credential-free backtest.',
+        action='Use Sample CSV for the fastest backend/UI smoke test.',
+        fn=lambda: _smoke_candles(load_sample_candles(symbol='ES', timeframe='1min', start='2025-01-02', end='2025-01-02')),
+    ))
+
+    checks.append(_run_smoke_check(
+        key='coinbase_backtest_data',
+        label='Coinbase crypto candles',
+        category='historical_candles',
+        expected='Fetch public BTC-USD daily candles.',
+        action='Collect BTC-USD or ETH-USD candles, then replay them from cache.',
+        fn=lambda: _smoke_candles(CoinbaseClient().get_candles(
+            product_id='BTC-USD',
+            timeframe='1d',
+            start='2025-01-02',
+            end='2025-01-10',
+        )),
+    ))
+
+    checks.append(_run_smoke_check(
+        key='yahoo_backtest_data',
+        label='Yahoo Finance stock candles',
+        category='historical_candles',
+        expected='Fetch public AAPL daily candles.',
+        action='Use Yahoo for stock/ETF backtests while Polygon is unconfigured.',
+        fn=lambda: _smoke_candles(YahooClient().get_chart(
+            symbol='AAPL',
+            timeframe='1d',
+            start='2025-01-02',
+            end='2025-01-31',
+        )),
+    ))
+
+    cache_summary = candle_cache_summary(limit=1)
+    if cache_summary:
+        dataset = cache_summary[0]
+        checks.append(_run_smoke_check(
+            key='cache_replay',
+            label='Cached candle replay',
+            category='local_replay',
+            expected='Replay the most recent cached OHLCV dataset.',
+            action='Use Cached candles to run without another provider call.',
+            fn=lambda dataset=dataset: _smoke_candles(load_cached_candles(
+                symbol=dataset.get('symbol'),
+                timeframe=dataset.get('timeframe'),
+                start=dataset.get('first_timestamp'),
+                end=dataset.get('last_timestamp'),
+                source=dataset.get('source'),
+            ), extra={'dataset': dataset}),
+        ))
+    else:
+        checks.append(_smoke_item(
+            key='cache_replay',
+            label='Cached candle replay',
+            category='local_replay',
+            status='warning',
+            rows=0,
+            detail='No cached candle rows exist yet.',
+            action='Collect sample, Coinbase, Yahoo, Tradovate, or Polygon candles before using cache replay.',
+        ))
+
+    congressional = list_congressional_trades(limit=5)
+    congressional_counts = congressional_disclosure_counts()
+    checks.append(_smoke_item(
+        key='congressional_disclosures',
+        label='Congressional disclosures',
+        category='research_data',
+        status='pass' if congressional.get('total', 0) else 'warning',
+        rows=congressional.get('total', 0),
+        detail=f"Local disclosure database contains House {congressional_counts.get('house', 0)} and Senate {congressional_counts.get('senate', 0)} rows.",
+        action='Use the Congress tab to sync fresh disclosures and replay the stored ticker set.',
+        sample={
+            'counts': congressional_counts,
+            'latest': (congressional.get('trades') or [{}])[0],
+        },
+    ))
+
+    checks.append(_provider_smoke_check(
+        provider=providers.get('etrade', {}),
+        key='etrade_quote',
+        label='E*TRADE quote and options data',
+        category='live_market_data',
+        missing_detail='E*TRADE OAuth is not fully configured.',
+        missing_action='Save consumer key/secret, run OAuth connect, paste the verifier, then re-run this check.',
+        fn=lambda: _smoke_quote(ETradeClient().get_quote('AAPL', detail_flag='ALL')),
+    ))
+
+    checks.append(_provider_smoke_check(
+        provider=providers.get('tradovate', {}),
+        key='tradovate_futures_candles',
+        label='Tradovate futures candles',
+        category='historical_candles',
+        missing_detail='Tradovate username/password credentials are not configured.',
+        missing_action='Save Tradovate username/password in Settings, then re-run this check.',
+        fn=lambda: _smoke_candles(_load_tradovate_candles({
+            'symbol': 'ES',
+            'timeframe': '1min',
+            'from': '2025-01-02',
+            'to': '2025-01-02',
+        })),
+    ))
+
+    checks.append(_provider_smoke_check(
+        provider=providers.get('polygon', {}),
+        key='polygon_stock_candles',
+        label='Polygon stock candles',
+        category='historical_candles',
+        missing_detail='Polygon API key is not configured.',
+        missing_action='Save POLYGON_API_KEY in Settings, then re-run this check.',
+        fn=lambda: _smoke_candles(PolygonClient().get_aggregates(
+            symbol='AAPL',
+            timeframe='1d',
+            start='2025-01-02',
+            end='2025-01-10',
+        )),
+    ))
+
+    return checks
+
+
+def _run_smoke_check(key, label, category, expected, action, fn):
+    try:
+        result = fn()
+        rows = result.get('rows', 0)
+        status = 'pass' if rows > 0 else 'warning'
+        detail = result.get('detail') or (f'{rows} rows returned.' if rows else 'No rows returned.')
+        return _smoke_item(
+            key=key,
+            label=label,
+            category=category,
+            status=status,
+            rows=rows,
+            detail=detail,
+            action=action,
+            expected=expected,
+            sample=result.get('sample'),
+        )
+    except Exception as exc:
+        return _smoke_item(
+            key=key,
+            label=label,
+            category=category,
+            status='fail',
+            detail=_safe_error(exc),
+            action=action,
+            expected=expected,
+        )
+
+
+def _provider_smoke_check(provider, key, label, category, missing_detail, missing_action, fn):
+    if not provider.get('configured'):
+        return _smoke_item(
+            key=key,
+            label=label,
+            category=category,
+            status='blocked',
+            rows=0,
+            detail=missing_detail,
+            action=missing_action,
+        )
+    return _run_smoke_check(
+        key=key,
+        label=label,
+        category=category,
+        expected='Configured provider returns data from a lightweight read-only probe.',
+        action='If this fails, re-save credentials and confirm the sandbox/live environment matches the account.',
+        fn=fn,
+    )
+
+
+def _smoke_candles(candles, extra=None):
+    sample = _candle_preview(candles)
+    if extra:
+        sample.update(extra)
+    return {
+        'rows': len(candles) if candles is not None else 0,
+        'detail': f'{len(candles)} OHLCV rows returned.' if candles is not None else 'No candle frame returned.',
+        'sample': sample,
+    }
+
+
+def _smoke_quote(payload):
+    summary = summarize_quote_payload(payload)
+    return {
+        'rows': len(summary),
+        'detail': f'{len(summary)} quote summaries returned.',
+        'sample': summary[0] if summary else {},
+    }
+
+
+def _smoke_summary(checks):
+    counts = {
+        'pass': 0,
+        'warning': 0,
+        'blocked': 0,
+        'fail': 0,
+    }
+    for check in checks:
+        counts[check['status']] = counts.get(check['status'], 0) + 1
+    return {
+        **counts,
+        'total': len(checks),
+        'ready': counts.get('fail', 0) == 0 and counts.get('blocked', 0) == 0,
+        'blocked_sources': [check['label'] for check in checks if check['status'] == 'blocked'],
+        'failed_sources': [check['label'] for check in checks if check['status'] == 'fail'],
+    }
+
+
+def _smoke_item(key, label, category, status, rows=0, detail='', action='', expected='', sample=None):
+    return {
+        'key': key,
+        'label': label,
+        'category': category,
+        'status': status,
+        'rows': rows,
+        'detail': detail,
+        'action': action,
+        'expected': expected,
+        'sample': _json_ready(sample or {}),
+    }
 
 
 def _source_item(key, label, configured, status, rows=0, detail='', preview=None, next_steps=None):

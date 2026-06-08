@@ -56,11 +56,24 @@ Docker compose mounts `.env` into the backend container so Settings changes pers
 ## Live Data And Strategy Modules
 
 - `Data Sources`: shows which sources are configured, whether probes succeed, how many local rows exist, the latest sample/error returned by each provider, and source-specific next steps.
+- `Data Sources` also includes `Full check`, which calls `/api/v1/data/smoke-test` for a read-only source verification matrix. Passing sources are currently usable; blocked sources need credentials or a fresh provider authorization.
 - `Backtest`: choose a provider/date range and use `Collect candles` to store OHLCV bars locally. Coinbase crypto candles, Yahoo Finance stock candles, and the sample CSV work without API keys. Use `Cached candles` as the source to replay stored data without another provider call.
 - `Live Data`: save E*TRADE consumer credentials in `Settings`, click `Connect E*TRADE`, paste the verifier code, then fetch or collect quote snapshots. Collected snapshots are stored in `data/market_data.sqlite`.
 - `Paper Trade`: create a forward paper session, then mark it from an E*TRADE live quote or a manual price. Sessions track simulated position, cash, equity, and PnL over time. This is paper-only mark-to-market validation and does not place orders.
 - `Options`: runs simulation-only payoff replays for long calls, long puts, bull call spreads, bear put spreads, and long straddles against sample, Coinbase, Yahoo Finance, Tradovate, Polygon, or cached underlying candles.
 - `Congress`: syncs recent House PTR PDFs and Senate eFD-derived DataDawn/OpenRegs ticker rows into `../congressional-trading/congress_trades.db`, previews stored disclosures, and replays mapped tickers. Senate rows are not faked.
+
+## Current Data Readiness
+
+The app can run backtests and options replays from local sample candles, public Coinbase crypto candles, public Yahoo Finance stock/ETF candles, and locally cached candles. Congressional disclosure research runs from the local SQLite database after sync.
+
+Credentialed providers still require valid account details before they can pass the full source check:
+
+- E*TRADE needs consumer key/secret plus a fresh OAuth access token and secret. Access tokens expire and may need reconnecting from the `Live Data` page.
+- Tradovate needs real username/password credentials that match the configured demo or live base URL.
+- Polygon needs a valid `POLYGON_API_KEY` with aggregate-bar access.
+
+All live-provider wiring is read-only market data and simulation support. The app does not place live trades or submit broker orders.
 
 ## Development
 - Backend: Python 3.12, Flask
