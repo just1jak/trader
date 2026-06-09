@@ -45,7 +45,7 @@ def list_congressional_trades(limit=50):
                      amount, comment
               from senate_trades
             )
-            order by transaction_date desc, filing_date desc
+            order by coalesce(nullif(filing_date, ''), transaction_date) desc, transaction_date desc
             limit ?
             """,
             (limit,),
@@ -124,6 +124,8 @@ def calculate_trade_return(trade, holding_days=5):
     try:
         transaction_date = datetime.datetime.strptime(trade['transaction_date'], '%Y-%m-%d')
     except (KeyError, TypeError, ValueError):
+        return None
+    if transaction_date.date() > datetime.datetime.utcnow().date():
         return None
 
     start_date = transaction_date.strftime('%Y-%m-%d')

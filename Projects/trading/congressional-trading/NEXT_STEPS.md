@@ -1,7 +1,7 @@
 # Next Steps for Congressional Trading Module
 
 ## Completed
-- Scrapers for House and Senate trades (placeholder data).
+- House PTR ingestion and Senate eFD-derived ingestion without placeholder rows.
 - Backtester that maps stock tickers to futures proxies and calculates returns.
 - Flask web app (`web/app.py`) with endpoints to trigger scrape+backtest and return results.
 - Database schema (`db_schema.sql`) for persisting trades and backtest results.
@@ -17,15 +17,15 @@
    sqlite3 congress_trades.db < db_schema.sql
    ```
 
-2. **Update scrapers and backtester to persist to SQLite**:
-   - Modify `scrape_house.py` and `scrape_senate.py` to insert rows into `house_trades` and `senate_trades` (using INSERT OR IGNORE to avoid duplicates).
+2. **Expand persistence and replay coverage**:
+   - Keep improving `scrape_house.py` and `scrape_senate.py` coverage for edge-case filings and scanned reports.
    - Modify `backtest.py` to insert a row into `backtest_results` and related details into `backtest_trade_details`.
 
 3. **Enrich data sources**:
-   - Replace placeholder URLs with actual STOP Act data endpoints:
-     - House: https://house.gov/stock-watcher-data/xml/ (or JSON)
-     - Senate: https://senate.gov/stockwatcher/ (XML/JSON)
-   - Implement proper parsing (XML/JSON) and handle pagination to capture multiple years.
+   - Current sources:
+     - House: official Clerk ZIP/PDF disclosures.
+     - Senate: current DataDawn/OpenRegs eFD-derived ticker rows with original PTR links.
+   - Add deeper official Senate eFD parsing when the live POST endpoint is accessible to server-side requests.
 
 4. **Improve ticker→futures mapping**:
    - Build a more comprehensive mapping (maybe using sector ETFs or a model).

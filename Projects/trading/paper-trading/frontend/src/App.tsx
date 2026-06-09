@@ -17,7 +17,7 @@ type BacktestForm = {
   timeframe: string;
   strategy: StrategyKey;
   params: Record<string, number | string | boolean>;
-  source: 'sample' | 'tradovate';
+  source: 'sample' | 'coinbase' | 'yahoo' | 'tradovate' | 'polygon' | 'cache';
 };
 
 type Metric = {
@@ -93,10 +93,164 @@ type LiveSnapshot = {
   request: Record<string, string>;
 };
 
+type QuoteSummary = {
+  symbol: string;
+  security_type: string;
+  description: string;
+  quote_status: string;
+  datetime: string;
+  last: number | null;
+  bid: number | null;
+  ask: number | null;
+  change: number | null;
+  change_percent: number | null;
+  volume: number | null;
+  previous_close: number | null;
+  source_note: string;
+};
+
 type LiveQuoteResult = {
   symbols: string;
   detailFlag: string;
+  summary?: QuoteSummary[];
   data: unknown;
+};
+
+type SourceDiagnostic = {
+  key: string;
+  label: string;
+  configured: boolean;
+  status: 'ok' | 'ready' | 'empty' | 'error' | 'needs_config';
+  rows: number;
+  detail: string;
+  preview: Record<string, unknown>;
+  next_steps?: string[];
+};
+
+type SourceSmokeCheck = {
+  key: string;
+  label: string;
+  category: string;
+  status: 'pass' | 'warning' | 'blocked' | 'fail';
+  rows: number;
+  detail: string;
+  action: string;
+  expected: string;
+  sample: Record<string, unknown>;
+};
+
+type SourceSmokeResult = {
+  summary: {
+    pass: number;
+    warning: number;
+    blocked: number;
+    fail: number;
+    total: number;
+    ready: boolean;
+    blocked_sources: string[];
+    failed_sources: string[];
+  };
+  checks: SourceSmokeCheck[];
+  message: string;
+};
+
+type SourceCollectionItem = {
+  key: string;
+  label: string;
+  status: 'collected' | 'empty' | 'blocked' | 'failed';
+  rows: number;
+  detail: string;
+  action: string;
+  request: Record<string, unknown>;
+  preview: Record<string, unknown>;
+};
+
+type SourceCollectionResponse = {
+  results: SourceCollectionItem[];
+  summary: {
+    collected: number;
+    empty: number;
+    blocked: number;
+    failed: number;
+    total: number;
+    ready: boolean;
+  };
+  cache: CandleCacheResponse;
+  snapshots: LiveSnapshot[];
+  message: string;
+};
+
+type CacheDataset = {
+  source: string;
+  symbol: string;
+  timeframe: string;
+  rows: number;
+  first_timestamp: string;
+  last_timestamp: string;
+  last_collected_at: string;
+};
+
+type CandleRecord = {
+  timestamp?: string;
+  open?: number;
+  high?: number;
+  low?: number;
+  close?: number;
+  volume?: number;
+};
+
+type CandleCacheResponse = {
+  rows: number;
+  datasets: CacheDataset[];
+};
+
+type CachePreview = {
+  source: string;
+  symbol: string;
+  timeframe: string;
+  rows: number;
+  candles: CandleRecord[];
+};
+
+type SourceWorkbenchSource =
+  | 'sample'
+  | 'coinbase'
+  | 'yahoo'
+  | 'tradovate'
+  | 'polygon'
+  | 'cache'
+  | 'etrade_market_data';
+
+type SourceWorkbenchForm = {
+  source: SourceWorkbenchSource;
+  symbol: string;
+  timeframe: string;
+  from: string;
+  to: string;
+  detailFlag: string;
+};
+
+type SourceWorkbenchResult =
+  | {
+      kind: 'candles';
+      label: string;
+      rows: number;
+      candles: CandleRecord[];
+    }
+  | {
+      kind: 'quote';
+      label: string;
+      rows: number;
+      summary: QuoteSummary[];
+      data: unknown;
+    };
+
+type SourceWorkbenchCandleResponse = {
+  source: string;
+  symbol: string;
+  timeframe: string;
+  rows: number;
+  candles: CandleRecord[];
 };
 
 type PaperStrategy = 'forward_long' | 'forward_short' | 'observe_only';
@@ -144,7 +298,7 @@ type OptionsForm = {
   symbol: string;
   from: string;
   to: string;
-  source: 'sample' | 'tradovate';
+  source: 'sample' | 'coinbase' | 'yahoo' | 'tradovate' | 'polygon' | 'cache';
   timeframe: string;
   strategy: 'long_call' | 'long_put' | 'bull_call_spread' | 'bear_put_spread' | 'long_straddle';
   option_type: 'CALL' | 'PUT';
@@ -177,6 +331,31 @@ type CongressResult = {
   trade_details: Array<Record<string, unknown>>;
   holding_days: number;
   message: string;
+};
+
+type CongressIngestSummary = {
+  status: string;
+  year: number;
+  limit: number;
+  counts: {
+    house: number;
+    senate: number;
+    total: number;
+  };
+  house: {
+    status: string;
+    reports_available: number;
+    reports_downloaded: number;
+    parsed: number;
+    inserted: number;
+    errors: Array<Record<string, unknown>>;
+  };
+  senate: {
+    status: string;
+    parsed: number;
+    inserted: number;
+    errors: string[];
+  };
 };
 
 const strategyOptions: Array<{
@@ -387,18 +566,30 @@ const sampleResults: BacktestResults = {
 const navItems = [
   { label: 'Backtest', icon: <TrendIcon /> },
   { label: 'Live Data', icon: <ChartIcon /> },
+  { label: 'Data Sources', icon: <DatabaseIcon /> },
   { label: 'Paper Trade', icon: <ClockIcon /> },
   { label: 'Options', icon: <GridIcon /> },
   { label: 'Congress', icon: <DocumentIcon /> },
   { label: 'Strategies', icon: <GridIcon /> },
   { label: 'Results', icon: <ClockIcon /> },
   { label: 'Exports', icon: <DownloadIcon /> },
-  { label: 'Notebook', icon: <DocumentIcon /> },
   { label: 'Settings', icon: <CogIcon /> },
 ];
 
+const defaultSourceWorkbenchForm: SourceWorkbenchForm = {
+  source: 'yahoo',
+  symbol: 'AAPL',
+  timeframe: '1d',
+  from: '2025-01-02',
+  to: '2025-01-31',
+  detailFlag: 'ALL',
+};
+
 function App() {
   const { callApi, loading, error, clearError } = useApi();
+  const callApiSilent = <T,>(url: string, options: RequestInit = {}) => {
+    return callApi<T>(url, { ...options, silent: true });
+  };
   const [activeNav, setActiveNav] = useState('Backtest');
   const [formData, setFormData] = useState<BacktestForm>({
     symbol: 'ES',
@@ -415,6 +606,18 @@ function App() {
   const [apiHealth, setApiHealth] = useState<ApiHealth | null>(null);
   const [backendStrategies, setBackendStrategies] = useState<Array<{ key: string; label: string }>>([]);
   const [dataPreview, setDataPreview] = useState<DataPreview | null>(null);
+  const [sourceDiagnostics, setSourceDiagnostics] = useState<SourceDiagnostic[]>([]);
+  const [sourceProbeMessage, setSourceProbeMessage] = useState('Source diagnostics have not been probed yet.');
+  const [sourceSmokeResult, setSourceSmokeResult] = useState<SourceSmokeResult | null>(null);
+  const [sourceSmokeMessage, setSourceSmokeMessage] = useState('Full source check has not been run yet.');
+  const [sourceCollectResults, setSourceCollectResults] = useState<SourceCollectionItem[]>([]);
+  const [sourceCollectMessage, setSourceCollectMessage] = useState('No collection run yet.');
+  const [cacheRows, setCacheRows] = useState(0);
+  const [cacheDatasets, setCacheDatasets] = useState<CacheDataset[]>([]);
+  const [cachePreview, setCachePreview] = useState<CachePreview | null>(null);
+  const [sourceWorkbenchForm, setSourceWorkbenchForm] = useState<SourceWorkbenchForm>(defaultSourceWorkbenchForm);
+  const [sourceWorkbenchMessage, setSourceWorkbenchMessage] = useState('Ready for a custom source request.');
+  const [sourceWorkbenchResult, setSourceWorkbenchResult] = useState<SourceWorkbenchResult | null>(null);
   const [providerSettings, setProviderSettings] = useState<ProviderSettings[]>([]);
   const [providerForms, setProviderForms] = useState<Record<string, Record<string, string>>>({});
   const [savingProvider, setSavingProvider] = useState<string | null>(null);
@@ -436,6 +639,7 @@ function App() {
   const [paperMessage, setPaperMessage] = useState('Create a paper session, then mark it from live quotes or a manual price.');
   const [oauthVerifier, setOauthVerifier] = useState('');
   const [oauthMessage, setOauthMessage] = useState('Start OAuth after saving your E*TRADE consumer key and secret.');
+  const [oauthAuthorizeUrl, setOauthAuthorizeUrl] = useState('');
   const [optionForm, setOptionForm] = useState<OptionsForm>({
     symbol: 'ES',
     from: '2025-01-02',
@@ -455,6 +659,8 @@ function App() {
   const [congressHoldingDays, setCongressHoldingDays] = useState('5');
   const [congressTrades, setCongressTrades] = useState<CongressTrade[]>([]);
   const [congressResult, setCongressResult] = useState<CongressResult | null>(null);
+  const [congressIngestResult, setCongressIngestResult] = useState<CongressIngestSummary | null>(null);
+  const [congressSyncing, setCongressSyncing] = useState(false);
   const [chartRange, setChartRange] = useState('All');
   const [tradeFilter, setTradeFilter] = useState<TradeFilter>('all');
   const [lastAction, setLastAction] = useState('Waiting for first backend run');
@@ -476,9 +682,11 @@ function App() {
 
   useEffect(() => {
     const loadBackendStatus = async () => {
-      const [health, strategies] = await Promise.all([
-        callApi<ApiHealth>('/api/v1/health'),
-        callApi<{ strategies: Array<{ key: string; label: string }> }>('/api/v1/strategies'),
+    const [health, strategies] = await Promise.all([
+        callApiSilent<ApiHealth>('/api/v1/health'),
+        callApiSilent<{ strategies: Array<{ key: string; label: string }> }>('/api/v1/strategies'),
+        loadSourceDiagnostics(false, true),
+        loadCandleCache(),
         loadProviderSettings(),
         loadLiveSnapshots(),
         loadPaperSessions(),
@@ -508,9 +716,38 @@ function App() {
       return;
     }
     if (field === 'source') {
+      const source = value as BacktestForm['source'];
+      if (source === 'coinbase') {
+        setFormData((previous) => ({
+          ...previous,
+          source,
+          symbol: 'BTC-USD',
+          timeframe: '1d',
+          from: '2025-01-02',
+          to: '2025-01-31',
+          strategy: 'ma_crossover',
+          params: defaultParams.ma_crossover,
+        }));
+        return;
+      }
+      if (source === 'yahoo') {
+        setFormData((previous) => ({
+          ...previous,
+          source,
+          symbol: 'AAPL',
+          timeframe: '1d',
+          from: '2025-01-02',
+          to: '2025-01-31',
+          strategy: 'ma_crossover',
+          params: defaultParams.ma_crossover,
+        }));
+        return;
+      }
       setFormData((previous) => ({
         ...previous,
-        source: value as BacktestForm['source'],
+        source,
+        symbol: source === 'polygon' ? 'AAPL' : source === 'sample' ? 'ES' : previous.symbol,
+        timeframe: source === 'polygon' ? '1d' : previous.timeframe,
       }));
       return;
     }
@@ -548,6 +785,31 @@ function App() {
     }
   };
 
+  const collectBacktestCandles = async () => {
+    if (formData.source === 'cache') {
+      setLastAction('Choose sample, Tradovate, or Polygon before collecting candles');
+      return;
+    }
+    const data = await callApi<{ saved: { rows: number; inserted_or_updated: number }; rows: number; source: string }>(
+      '/api/v1/market/candles/collect',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          source: formData.source,
+          symbol: formData.symbol,
+          timeframe: formData.timeframe,
+          from: formData.from,
+          to: formData.to,
+        }),
+      },
+    );
+    if (data?.saved) {
+      setLastAction(`Cached ${data.saved.inserted_or_updated} ${data.source} candles`);
+      loadSourceDiagnostics(false, true);
+      loadCandleCache();
+    }
+  };
+
   const refreshDataPreview = async () => {
     if (formData.source === 'tradovate' && !apiHealth?.sources?.tradovate) {
       setDataPreview(null);
@@ -562,10 +824,222 @@ function App() {
       from: formData.from,
       to: formData.to,
     });
-    const data = await callApi<DataPreview>(`/api/v1/market/backtest-data?${params.toString()}`);
+    const data = await callApiSilent<DataPreview>(`/api/v1/market/backtest-data?${params.toString()}`);
     if (data) {
       setDataPreview(data);
       setLastAction(`Loaded ${data.rows} ${data.timeframe} candles from ${data.source}`);
+    } else {
+      setDataPreview(null);
+    }
+    return data;
+  };
+
+  const loadSourceDiagnostics = async (probe = false, silent = false) => {
+    setSourceProbeMessage(probe ? 'Probing configured sources...' : 'Loaded source configuration status.');
+    const params = new URLSearchParams({ probe: String(probe) });
+    const request = silent ? callApiSilent : callApi;
+    const data = await request<{ sources: SourceDiagnostic[] }>(`/api/v1/data/sources?${params.toString()}`);
+    if (data?.sources) {
+      setSourceDiagnostics(data.sources);
+      const errors = data.sources.filter((source) => source.status === 'error');
+      const empty = data.sources.filter((source) => source.status === 'empty');
+      const needsConfig = data.sources.filter((source) => source.status === 'needs_config');
+      setSourceProbeMessage(
+        probe
+          ? `Probe complete: ${data.sources.filter((source) => source.status === 'ok').length} ok, ${needsConfig.length} need config, ${errors.length} error, ${empty.length} empty.`
+          : 'Ready to probe configured data sources.',
+      );
+    }
+    return data;
+  };
+
+  const runSourceSmokeTest = async () => {
+    setSourceSmokeMessage('Running full source check...');
+    const data = await callApiSilent<SourceSmokeResult>('/api/v1/data/smoke-test');
+    if (data?.summary) {
+      setSourceSmokeResult(data);
+      setSourceSmokeMessage(
+        `Full check: ${data.summary.pass} pass, ${data.summary.blocked} blocked, ${data.summary.fail} fail, ${data.summary.warning} warning.`,
+      );
+    } else {
+      setSourceSmokeMessage('Source check could not complete in this environment.');
+    }
+    return data;
+  };
+
+  const collectDefaultData = async () => {
+    setSourceCollectMessage('Collecting safe default datasets...');
+    const data = await callApiSilent<SourceCollectionResponse>('/api/v1/data/collect-defaults', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    if (data?.summary) {
+      setSourceCollectResults(data.results);
+      setSourceCollectMessage(
+        `Collection: ${data.summary.collected} collected, ${data.summary.blocked} blocked, ${data.summary.failed} failed, ${data.summary.empty} empty.`,
+      );
+      setCacheRows(data.cache.rows);
+      setCacheDatasets(data.cache.datasets ?? []);
+      if (data.snapshots) setLiveSnapshots(data.snapshots);
+      await loadSourceDiagnostics(false, true);
+    } else {
+      setSourceCollectMessage('Collect defaults did not complete; check provider credentials or connectivity.');
+    }
+    return data;
+  };
+
+  const loadCandleCache = async () => {
+    const data = await callApiSilent<CandleCacheResponse>('/api/v1/market/candles/cache');
+    if (data) {
+      setCacheRows(data.rows);
+      setCacheDatasets(data.datasets ?? []);
+    }
+    return data;
+  };
+
+  const previewCacheDataset = async (dataset: CacheDataset) => {
+    const params = new URLSearchParams({
+      source: dataset.source,
+      symbol: dataset.symbol,
+      timeframe: dataset.timeframe,
+      from: dataset.first_timestamp,
+      to: dataset.last_timestamp,
+      limit: '10',
+    });
+    const data = await callApiSilent<CachePreview>(`/api/v1/market/candles/cache/preview?${params.toString()}`);
+    if (data) {
+      setCachePreview(data);
+      setLastAction(`Previewing ${data.rows} cached ${data.symbol} candles`);
+    } else {
+      setLastAction('Cached dataset preview could not be loaded right now.');
+    }
+    return data;
+  };
+
+  const updateSourceWorkbenchField = (field: keyof SourceWorkbenchForm, value: string) => {
+    if (field === 'source') {
+      const source = value as SourceWorkbenchSource;
+      if (source === 'cache' && cacheDatasets[0]) {
+        const dataset = cacheDatasets[0];
+        setSourceWorkbenchForm({
+          source,
+          symbol: dataset.symbol,
+          timeframe: dataset.timeframe,
+          from: dataset.first_timestamp.slice(0, 10),
+          to: dataset.last_timestamp.slice(0, 10),
+          detailFlag: 'ALL',
+        });
+        return;
+      }
+      setSourceWorkbenchForm(sourceWorkbenchDefaults(source));
+      return;
+    }
+    setSourceWorkbenchForm((previous) => ({ ...previous, [field]: value }));
+  };
+
+  const previewSourceWorkbenchData = async () => {
+    if (sourceWorkbenchForm.source === 'etrade_market_data') {
+      setSourceWorkbenchMessage(`Fetching E*TRADE quote for ${sourceWorkbenchForm.symbol}...`);
+      const params = new URLSearchParams({
+        symbols: sourceWorkbenchForm.symbol,
+        detailFlag: sourceWorkbenchForm.detailFlag,
+      });
+      const data = await callApiSilent<LiveQuoteResult>(`/api/v1/etrade/live/quote?${params.toString()}`);
+      if (data) {
+        const summary = data.summary ?? [];
+        setLiveQuote(data);
+        setSourceWorkbenchResult({
+          kind: 'quote',
+          label: `E*TRADE ${data.symbols}`,
+          rows: summary.length,
+          summary,
+          data: data.data,
+        });
+        setSourceWorkbenchMessage(`Loaded ${summary.length} E*TRADE quote summaries.`);
+      }
+      return data;
+    }
+
+    setSourceWorkbenchMessage(`Loading ${sourceWorkbenchForm.source} candles for ${sourceWorkbenchForm.symbol}...`);
+    const params = sourceWorkbenchParams(sourceWorkbenchForm);
+    const data = await callApiSilent<SourceWorkbenchCandleResponse>(`/api/v1/market/backtest-data?${params.toString()}`);
+    if (data) {
+      setSourceWorkbenchResult({
+        kind: 'candles',
+        label: `${data.source} ${data.symbol} ${data.timeframe}`,
+        rows: data.rows,
+        candles: (data.candles ?? []).slice(0, 10),
+      });
+      setSourceWorkbenchMessage(`Loaded ${data.rows} ${data.source} candles.`);
+    }
+    return data;
+  };
+
+  const collectSourceWorkbenchData = async () => {
+    if (sourceWorkbenchForm.source === 'cache') {
+      setSourceWorkbenchMessage('Cached candles are replay-only; preview the cached dataset instead.');
+      return null;
+    }
+
+    if (sourceWorkbenchForm.source === 'etrade_market_data') {
+      setSourceWorkbenchMessage(`Collecting E*TRADE quote for ${sourceWorkbenchForm.symbol}...`);
+      const data = await callApiSilent<{ data: unknown; summary?: QuoteSummary[]; snapshots: LiveSnapshot[] }>('/api/v1/etrade/live/collect', {
+        method: 'POST',
+        body: JSON.stringify({
+          symbols: sourceWorkbenchForm.symbol,
+          detailFlag: sourceWorkbenchForm.detailFlag,
+        }),
+      });
+      if (data) {
+        const summary = data.summary ?? [];
+        setLiveQuote({ symbols: sourceWorkbenchForm.symbol, detailFlag: sourceWorkbenchForm.detailFlag, summary, data: data.data });
+        setLiveSnapshots(data.snapshots ?? []);
+        setSourceWorkbenchResult({
+          kind: 'quote',
+          label: `E*TRADE ${sourceWorkbenchForm.symbol}`,
+          rows: summary.length,
+          summary,
+          data: data.data,
+        });
+        setSourceWorkbenchMessage(`Collected ${summary.length} E*TRADE quote summaries.`);
+        await loadSourceDiagnostics(false, true);
+      }
+      return data;
+    }
+
+    setSourceWorkbenchMessage(`Collecting ${sourceWorkbenchForm.source} candles for ${sourceWorkbenchForm.symbol}...`);
+    const data = await callApi<{ saved: { rows: number; inserted_or_updated: number }; rows: number; source: string }>(
+      '/api/v1/market/candles/collect',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          source: sourceWorkbenchForm.source,
+          symbol: sourceWorkbenchForm.symbol,
+          timeframe: sourceWorkbenchForm.timeframe,
+          from: sourceWorkbenchForm.from,
+          to: sourceWorkbenchForm.to,
+        }),
+      },
+    );
+    if (data?.saved) {
+      setSourceWorkbenchMessage(`Cached ${data.saved.inserted_or_updated} ${data.source} candles.`);
+      await loadCandleCache();
+      await loadSourceDiagnostics(false, true);
+      const previewParams = sourceWorkbenchParams({
+        ...sourceWorkbenchForm,
+        source: 'cache',
+      });
+      previewParams.set('source', data.source);
+      previewParams.set('limit', '10');
+      const preview = await callApiSilent<CachePreview>(`/api/v1/market/candles/cache/preview?${previewParams.toString()}`);
+      if (preview) {
+        setSourceWorkbenchResult({
+          kind: 'candles',
+          label: `cached ${preview.symbol} ${preview.timeframe}`,
+          rows: preview.rows,
+          candles: preview.candles ?? [],
+        });
+      }
     }
     return data;
   };
@@ -603,7 +1077,7 @@ function App() {
   };
 
   const loadProviderSettings = async () => {
-    const data = await callApi<{ providers: ProviderSettings[] }>('/api/v1/settings/providers');
+    const data = await callApiSilent<{ providers: ProviderSettings[] }>('/api/v1/settings/providers');
     if (data?.providers) setProviderSettings(data.providers);
     return data;
   };
@@ -635,12 +1109,30 @@ function App() {
     setSavingProvider(null);
   };
 
+  const clearProviderField = async (providerKey: string, fieldKey: string) => {
+    setSavingProvider(providerKey);
+    const data = await callApi<{ providers: ProviderSettings[] }>(`/api/v1/settings/providers/${providerKey}/clear`, {
+      method: 'POST',
+      body: JSON.stringify({ keys: [fieldKey] }),
+    });
+    if (data?.providers) {
+      setProviderSettings(data.providers);
+      setProviderForms((previous) => ({ ...previous, [providerKey]: { ...(previous[providerKey] ?? {}), [fieldKey]: '' } }));
+      setLastAction(`${fieldKey} cleared`);
+      const health = await callApi<ApiHealth>('/api/v1/health');
+      if (health) setApiHealth(health);
+      await loadSourceDiagnostics(false, true);
+    }
+    setSavingProvider(null);
+  };
+
   const startEtradeOAuth = async () => {
     const data = await callApi<{ authorize_url: string; message: string }>('/api/v1/etrade/oauth/start', {
       method: 'POST',
     });
     if (data?.authorize_url) {
       setOauthMessage(data.message);
+      setOauthAuthorizeUrl(data.authorize_url);
       window.open(data.authorize_url, '_blank', 'noopener,noreferrer');
     }
   };
@@ -654,6 +1146,7 @@ function App() {
       setProviderSettings(data.providers);
       setOauthVerifier('');
       setOauthMessage(data.message);
+      setOauthAuthorizeUrl('');
       const health = await callApi<ApiHealth>('/api/v1/health');
       if (health) setApiHealth(health);
     }
@@ -674,19 +1167,19 @@ function App() {
   };
 
   const collectLiveQuote = async () => {
-    const data = await callApi<{ data: unknown; snapshots: LiveSnapshot[] }>('/api/v1/etrade/live/collect', {
+    const data = await callApi<{ data: unknown; summary?: QuoteSummary[]; snapshots: LiveSnapshot[] }>('/api/v1/etrade/live/collect', {
       method: 'POST',
       body: JSON.stringify({ symbols: liveSymbols, detailFlag: 'ALL' }),
     });
     if (data) {
-      setLiveQuote({ symbols: liveSymbols, detailFlag: 'ALL', data: data.data });
+      setLiveQuote({ symbols: liveSymbols, detailFlag: 'ALL', summary: data.summary, data: data.data });
       setLiveSnapshots(data.snapshots ?? []);
       setLastAction(`Collected E*TRADE quote snapshot for ${liveSymbols}`);
     }
   };
 
   const loadLiveSnapshots = async () => {
-    const data = await callApi<{ snapshots: LiveSnapshot[] }>('/api/v1/etrade/live/snapshots');
+    const data = await callApiSilent<{ snapshots: LiveSnapshot[] }>('/api/v1/etrade/live/snapshots');
     if (data?.snapshots) setLiveSnapshots(data.snapshots);
     return data;
   };
@@ -706,7 +1199,7 @@ function App() {
   };
 
   const loadPaperSessions = async () => {
-    const data = await callApi<{ sessions: PaperSession[] }>('/api/v1/paper/sessions');
+    const data = await callApiSilent<{ sessions: PaperSession[] }>('/api/v1/paper/sessions');
     if (data?.sessions) {
       setPaperSessions(data.sessions);
       const selectedStillExists = data.sessions.some((session) => session.id === selectedPaperSessionId);
@@ -718,7 +1211,7 @@ function App() {
   };
 
   const loadPaperMarks = async (sessionId: number) => {
-    const data = await callApi<{ marks: PaperMark[] }>(`/api/v1/paper/sessions/${sessionId}/marks`);
+    const data = await callApiSilent<{ marks: PaperMark[] }>(`/api/v1/paper/sessions/${sessionId}/marks`);
     if (data?.marks) setPaperMarks(data.marks);
     return data;
   };
@@ -784,6 +1277,35 @@ function App() {
       if (field === 'strategy') {
         next.option_type = value.includes('put') ? 'PUT' : 'CALL';
       }
+      if (field === 'source' && value === 'polygon') {
+        next.symbol = 'AAPL';
+        next.timeframe = '1d';
+      }
+      if (field === 'source' && value === 'coinbase') {
+        next.symbol = 'BTC-USD';
+        next.timeframe = '1d';
+        next.from = '2025-01-02';
+        next.to = '2025-01-10';
+        next.strike = '95000';
+        next.premium = '2500';
+        next.short_strike = '100000';
+        next.short_premium = '1000';
+        next.multiplier = '1';
+      }
+      if (field === 'source' && value === 'yahoo') {
+        next.symbol = 'AAPL';
+        next.timeframe = '1d';
+        next.from = '2025-01-02';
+        next.to = '2025-01-31';
+        next.strike = '240';
+        next.premium = '12.50';
+        next.short_strike = '260';
+        next.short_premium = '4.00';
+        next.multiplier = '100';
+      }
+      if (field === 'source' && value === 'sample') {
+        next.symbol = 'ES';
+      }
       return next;
     });
   };
@@ -800,7 +1322,7 @@ function App() {
   };
 
   const loadCongressTrades = async () => {
-    const data = await callApi<{ trades: CongressTrade[] }>('/api/v1/congress/trades?limit=25');
+    const data = await callApiSilent<{ trades: CongressTrade[] }>('/api/v1/congress/trades?limit=25');
     if (data?.trades) setCongressTrades(data.trades);
     return data;
   };
@@ -813,6 +1335,28 @@ function App() {
     if (data?.metrics) {
       setCongressResult(data);
       setLastAction(`Congressional disclosure replay checked ${data.metrics.total_trades ?? 0} trades`);
+    }
+  };
+
+  const syncCongressTrades = async () => {
+    setCongressSyncing(true);
+    const year = new Date().getFullYear();
+    try {
+      const data = await callApi<{ summary: CongressIngestSummary; trades: { trades: CongressTrade[] }; message: string }>(
+        '/api/v1/congress/ingest',
+        {
+          method: 'POST',
+          body: JSON.stringify({ year, limit: 25, include_senate: true }),
+        },
+      );
+      if (data?.summary) {
+        setCongressIngestResult(data.summary);
+        setCongressTrades(data.trades?.trades ?? congressTrades);
+        loadSourceDiagnostics(false, true);
+        setLastAction(`Synced ${data.summary.counts.total} congressional disclosure rows`);
+      }
+    } finally {
+      setCongressSyncing(false);
     }
   };
 
@@ -879,7 +1423,9 @@ function App() {
             collectLiveQuote={collectLiveQuote}
             completeEtradeOAuth={completeEtradeOAuth}
             congressHoldingDays={congressHoldingDays}
+            congressIngestResult={congressIngestResult}
             congressResult={congressResult}
+            congressSyncing={congressSyncing}
             congressTrades={congressTrades}
             exportTradesCsv={exportTradesCsv}
             fetchLiveQuote={fetchLiveQuote}
@@ -887,6 +1433,7 @@ function App() {
             liveSnapshots={liveSnapshots}
             liveSymbols={liveSymbols}
             oauthMessage={oauthMessage}
+            oauthAuthorizeUrl={oauthAuthorizeUrl}
             oauthVerifier={oauthVerifier}
             paperForm={paperForm}
             paperMarks={paperMarks}
@@ -901,7 +1448,9 @@ function App() {
             renewEtradeToken={renewEtradeToken}
             results={results}
             runCongressBacktest={runCongressBacktest}
+            syncCongressTrades={syncCongressTrades}
             runOptionsBacktest={runOptionsBacktest}
+            clearProviderField={clearProviderField}
             saveProviderSettings={saveProviderSettings}
             savingProvider={savingProvider}
             setCongressHoldingDays={setCongressHoldingDays}
@@ -909,10 +1458,30 @@ function App() {
             setOauthVerifier={setOauthVerifier}
             selectedPaperSessionId={selectedPaperSessionId}
             selectPaperSession={selectPaperSession}
+            sourceDiagnostics={sourceDiagnostics}
+            sourceProbeMessage={sourceProbeMessage}
+            sourceCollectMessage={sourceCollectMessage}
+            sourceCollectResults={sourceCollectResults}
+            sourceSmokeMessage={sourceSmokeMessage}
+            sourceSmokeResult={sourceSmokeResult}
+            cacheDatasets={cacheDatasets}
+            cachePreview={cachePreview}
+            cacheRows={cacheRows}
+            collectDefaultData={collectDefaultData}
+            collectSourceWorkbenchData={collectSourceWorkbenchData}
+            previewSourceWorkbenchData={previewSourceWorkbenchData}
             startEtradeOAuth={startEtradeOAuth}
+            sourceWorkbenchForm={sourceWorkbenchForm}
+            sourceWorkbenchMessage={sourceWorkbenchMessage}
+            sourceWorkbenchResult={sourceWorkbenchResult}
             updateOptionField={updateOptionField}
             updatePaperField={updatePaperField}
             updateProviderField={updateProviderField}
+            updateSourceWorkbenchField={updateSourceWorkbenchField}
+            loadSourceDiagnostics={loadSourceDiagnostics}
+            loadCandleCache={loadCandleCache}
+            previewCacheDataset={previewCacheDataset}
+            runSourceSmokeTest={runSourceSmokeTest}
           />
         ) : (
           <>
@@ -924,6 +1493,12 @@ function App() {
                 <option value="NQ">NQ - E-mini Nasdaq 100</option>
                 <option value="CL">CL - Crude Oil</option>
                 <option value="GC">GC - Gold</option>
+                <option value="BTC-USD">BTC-USD - Bitcoin</option>
+                <option value="ETH-USD">ETH-USD - Ethereum</option>
+                <option value="AAPL">AAPL - Apple</option>
+                <option value="SPY">SPY - S&P 500 ETF</option>
+                <option value="QQQ">QQQ - Nasdaq 100 ETF</option>
+                <option value="NVDA">NVDA - Nvidia</option>
               </select>
             </Field>
 
@@ -958,7 +1533,11 @@ function App() {
             <Field label="Data source">
               <select value={formData.source} onChange={(event) => updateField('source', event.target.value)}>
                 <option value="sample">Sample CSV</option>
+                <option value="coinbase">Coinbase crypto</option>
+                <option value="yahoo">Yahoo Finance</option>
                 <option value="tradovate">Tradovate</option>
+                <option value="polygon">Polygon</option>
+                <option value="cache">Cached candles</option>
               </select>
             </Field>
 
@@ -970,6 +1549,10 @@ function App() {
               <button className="reset-button" type="button" onClick={() => setFormData({ ...formData, params: defaultParams[formData.strategy] })}>
                 <ResetIcon />
                 Reset
+              </button>
+              <button className="reset-button" type="button" onClick={collectBacktestCandles} disabled={formData.source === 'cache'}>
+                <DatabaseIcon />
+                Collect candles
               </button>
             </div>
           </div>
@@ -1068,6 +1651,57 @@ function Field({ children, className = '', label }: { children: React.ReactNode;
   );
 }
 
+function QuoteSummaryList({ summaries }: { summaries: QuoteSummary[] }) {
+  return (
+    <div className="quote-summary-grid">
+      {summaries.map((quote) => (
+        <article className="quote-summary-card" key={`${quote.symbol}-${quote.datetime}`}>
+          <div>
+            <span>{quote.symbol || 'Unknown'}</span>
+            <strong>{quote.description || quote.security_type || 'Quote'}</strong>
+          </div>
+          <ul>
+            <li><span>Last</span><strong>{quote.last ? formatCurrency(quote.last) : 'n/a'}</strong></li>
+            <li><span>Bid / ask</span><strong>{formatOptionalPrice(quote.bid)} / {formatOptionalPrice(quote.ask)}</strong></li>
+            <li><span>Volume</span><strong>{quote.volume ? quote.volume.toLocaleString() : 'n/a'}</strong></li>
+            <li><span>Status</span><strong>{quote.quote_status || 'n/a'}</strong></li>
+          </ul>
+          <p>{quote.datetime || quote.source_note}</p>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function CandleRowsTable({ candles, rows, title }: { candles: CandleRecord[]; rows: number; title: string }) {
+  return (
+    <div className="cache-preview-table">
+      <div className="cache-preview-heading">
+        <strong>{title}</strong>
+        <span>{rows.toLocaleString()} total rows</span>
+      </div>
+      <div className="cache-preview-grid">
+        <span>Time</span>
+        <span>Open</span>
+        <span>High</span>
+        <span>Low</span>
+        <span>Close</span>
+        <span>Volume</span>
+        {candles.map((candle, index) => (
+          <React.Fragment key={`${candle.timestamp}-${index}`}>
+            <strong>{String(candle.timestamp ?? 'n/a')}</strong>
+            <strong>{formatNumber(candle.open)}</strong>
+            <strong>{formatNumber(candle.high)}</strong>
+            <strong>{formatNumber(candle.low)}</strong>
+            <strong>{formatNumber(candle.close)}</strong>
+            <strong>{formatNumber(candle.volume)}</strong>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ModulePanel({
   activeNav,
   apiHealth,
@@ -1075,7 +1709,9 @@ function ModulePanel({
   collectLiveQuote,
   completeEtradeOAuth,
   congressHoldingDays,
+  congressIngestResult,
   congressResult,
+  congressSyncing,
   congressTrades,
   exportTradesCsv,
   fetchLiveQuote,
@@ -1083,6 +1719,7 @@ function ModulePanel({
   liveSnapshots,
   liveSymbols,
   oauthMessage,
+  oauthAuthorizeUrl,
   oauthVerifier,
   paperForm,
   paperMarks,
@@ -1097,7 +1734,9 @@ function ModulePanel({
   renewEtradeToken,
   results,
   runCongressBacktest,
+  syncCongressTrades,
   runOptionsBacktest,
+  clearProviderField,
   saveProviderSettings,
   savingProvider,
   setCongressHoldingDays,
@@ -1105,10 +1744,30 @@ function ModulePanel({
   setOauthVerifier,
   selectedPaperSessionId,
   selectPaperSession,
+  sourceDiagnostics,
+  sourceProbeMessage,
+  sourceCollectMessage,
+  sourceCollectResults,
+  sourceSmokeMessage,
+  sourceSmokeResult,
+  cacheDatasets,
+  cachePreview,
+  cacheRows,
+  collectDefaultData,
+  collectSourceWorkbenchData,
+  previewSourceWorkbenchData,
   startEtradeOAuth,
+  sourceWorkbenchForm,
+  sourceWorkbenchMessage,
+  sourceWorkbenchResult,
   updateOptionField,
   updatePaperField,
   updateProviderField,
+  updateSourceWorkbenchField,
+  loadSourceDiagnostics,
+  loadCandleCache,
+  previewCacheDataset,
+  runSourceSmokeTest,
 }: {
   activeNav: string;
   apiHealth: ApiHealth | null;
@@ -1117,7 +1776,9 @@ function ModulePanel({
   completeEtradeOAuth: () => void;
   createPaperSession: () => void;
   congressHoldingDays: string;
+  congressIngestResult: CongressIngestSummary | null;
   congressResult: CongressResult | null;
+  congressSyncing: boolean;
   congressTrades: CongressTrade[];
   exportTradesCsv: () => void;
   fetchLiveQuote: () => void;
@@ -1126,6 +1787,7 @@ function ModulePanel({
   liveSymbols: string;
   markPaperSession: (mode: 'live' | 'manual') => void;
   oauthMessage: string;
+  oauthAuthorizeUrl: string;
   oauthVerifier: string;
   paperForm: PaperForm;
   paperMarks: PaperMark[];
@@ -1138,7 +1800,9 @@ function ModulePanel({
   renewEtradeToken: () => void;
   results: BacktestResults;
   runCongressBacktest: () => void;
+  syncCongressTrades: () => void;
   runOptionsBacktest: () => void;
+  clearProviderField: (providerKey: string, fieldKey: string) => void;
   saveProviderSettings: (providerKey: string) => void;
   savingProvider: string | null;
   setCongressHoldingDays: (value: string) => void;
@@ -1146,10 +1810,30 @@ function ModulePanel({
   setOauthVerifier: (value: string) => void;
   selectedPaperSessionId: number | null;
   selectPaperSession: (sessionId: number) => void;
+  sourceDiagnostics: SourceDiagnostic[];
+  sourceProbeMessage: string;
+  sourceCollectMessage: string;
+  sourceCollectResults: SourceCollectionItem[];
+  sourceSmokeMessage: string;
+  sourceSmokeResult: SourceSmokeResult | null;
+  cacheDatasets: CacheDataset[];
+  cachePreview: CachePreview | null;
+  cacheRows: number;
+  collectDefaultData: () => void;
+  collectSourceWorkbenchData: () => void;
+  previewSourceWorkbenchData: () => void;
   startEtradeOAuth: () => void;
+  sourceWorkbenchForm: SourceWorkbenchForm;
+  sourceWorkbenchMessage: string;
+  sourceWorkbenchResult: SourceWorkbenchResult | null;
   updateOptionField: (field: keyof OptionsForm, value: string) => void;
   updatePaperField: (field: keyof PaperForm, value: string) => void;
   updateProviderField: (providerKey: string, fieldKey: string, value: string) => void;
+  updateSourceWorkbenchField: (field: keyof SourceWorkbenchForm, value: string) => void;
+  loadSourceDiagnostics: (probe?: boolean) => void;
+  loadCandleCache: () => void;
+  previewCacheDataset: (dataset: CacheDataset) => void;
+  runSourceSmokeTest: () => void;
 }) {
   const routeEntries = apiHealth ? Object.entries(apiHealth.routes) : [];
   const selectedPaperSession = paperSessions.find((session) => session.id === selectedPaperSessionId) ?? paperSessions[0] ?? null;
@@ -1190,6 +1874,11 @@ function ModulePanel({
                   />
                 </label>
               </div>
+              {oauthAuthorizeUrl ? (
+                <a className="oauth-link" href={oauthAuthorizeUrl} rel="noreferrer" target="_blank">
+                  Open E*TRADE authorization
+                </a>
+              ) : null}
               <div className="action-row">
                 <button className="run-button" type="button" onClick={startEtradeOAuth}>
                   <PlayIcon />
@@ -1222,6 +1911,7 @@ function ModulePanel({
                   Collect
                 </button>
               </div>
+              {liveQuote?.summary?.length ? <QuoteSummaryList summaries={liveQuote.summary} /> : null}
               <pre className="live-json">{liveQuote ? summarizePayload(liveQuote.data) : 'No live quote loaded yet.'}</pre>
             </article>
 
@@ -1243,6 +1933,259 @@ function ModulePanel({
                 )}
               </ul>
             </article>
+          </>
+        )}
+
+        {activeNav === 'Data Sources' && (
+          <>
+            <article className="module-card is-wide">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Source diagnostics</h3>
+                  <p>{sourceProbeMessage}</p>
+                </div>
+                <strong className="module-status-ok">{sourceDiagnostics.length} sources</strong>
+              </div>
+              <div className="action-row">
+                <button className="run-button" type="button" onClick={() => loadSourceDiagnostics(true)}>
+                  <ChartIcon />
+                  Probe sources
+                </button>
+                <button className="reset-button" type="button" onClick={runSourceSmokeTest}>
+                  <CheckIcon />
+                  Full check
+                </button>
+                <button className="reset-button" type="button" onClick={() => loadSourceDiagnostics(false)}>
+                  <ResetIcon />
+                  Refresh status
+                </button>
+              </div>
+            </article>
+
+            <article className="module-card is-wide source-workbench-card">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Source workbench</h3>
+                  <p>{sourceWorkbenchMessage}</p>
+                </div>
+                <strong className={sourceWorkbenchResult?.rows ? 'module-status-ok' : 'module-status-warn'}>
+                  {sourceWorkbenchResult ? `${sourceWorkbenchResult.rows.toLocaleString()} rows` : 'idle'}
+                </strong>
+              </div>
+              <div className="module-form-grid source-workbench-grid">
+                <label className="provider-field">
+                  <span>Source</span>
+                  <select value={sourceWorkbenchForm.source} onChange={(event) => updateSourceWorkbenchField('source', event.target.value)}>
+                    <option value="sample">Sample CSV</option>
+                    <option value="coinbase">Coinbase crypto</option>
+                    <option value="yahoo">Yahoo Finance</option>
+                    <option value="tradovate">Tradovate</option>
+                    <option value="polygon">Polygon</option>
+                    <option value="cache">Cached candles</option>
+                    <option value="etrade_market_data">E*TRADE quote</option>
+                  </select>
+                </label>
+                <label className="provider-field">
+                  <span>Symbol</span>
+                  <input value={sourceWorkbenchForm.symbol} onChange={(event) => updateSourceWorkbenchField('symbol', event.target.value)} />
+                </label>
+                {sourceWorkbenchForm.source === 'etrade_market_data' ? (
+                  <label className="provider-field">
+                    <span>Detail flag</span>
+                    <select value={sourceWorkbenchForm.detailFlag} onChange={(event) => updateSourceWorkbenchField('detailFlag', event.target.value)}>
+                      <option value="ALL">ALL</option>
+                      <option value="INTRADAY">INTRADAY</option>
+                      <option value="FUNDAMENTAL">FUNDAMENTAL</option>
+                      <option value="OPTIONS">OPTIONS</option>
+                      <option value="WEEK_52">WEEK_52</option>
+                    </select>
+                  </label>
+                ) : (
+                  <>
+                    <label className="provider-field">
+                      <span>Timeframe</span>
+                      <select value={sourceWorkbenchForm.timeframe} onChange={(event) => updateSourceWorkbenchField('timeframe', event.target.value)}>
+                        <option value="1min">1m</option>
+                        <option value="5min">5m</option>
+                        <option value="15min">15m</option>
+                        <option value="1h">1h</option>
+                        <option value="1d">1d</option>
+                      </select>
+                    </label>
+                    <label className="provider-field">
+                      <span>From</span>
+                      <input type="date" value={sourceWorkbenchForm.from.slice(0, 10)} onChange={(event) => updateSourceWorkbenchField('from', event.target.value)} />
+                    </label>
+                    <label className="provider-field">
+                      <span>To</span>
+                      <input type="date" value={sourceWorkbenchForm.to.slice(0, 10)} onChange={(event) => updateSourceWorkbenchField('to', event.target.value)} />
+                    </label>
+                  </>
+                )}
+              </div>
+              <div className="action-row">
+                <button className="run-button" type="button" onClick={previewSourceWorkbenchData}>
+                  <ChartIcon />
+                  Preview source
+                </button>
+                <button className="reset-button" type="button" disabled={sourceWorkbenchForm.source === 'cache'} onClick={collectSourceWorkbenchData}>
+                  <DownloadIcon />
+                  Collect source
+                </button>
+              </div>
+              {sourceWorkbenchResult?.kind === 'candles' ? (
+                <CandleRowsTable
+                  candles={sourceWorkbenchResult.candles}
+                  rows={sourceWorkbenchResult.rows}
+                  title={sourceWorkbenchResult.label}
+                />
+              ) : null}
+              {sourceWorkbenchResult?.kind === 'quote' ? (
+                <div className="workbench-quote-result">
+                  {sourceWorkbenchResult.summary.length ? <QuoteSummaryList summaries={sourceWorkbenchResult.summary} /> : null}
+                  <pre className="live-json">{summarizePayload(sourceWorkbenchResult.data)}</pre>
+                </div>
+              ) : null}
+            </article>
+
+            <article className="module-card is-wide">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Full source check</h3>
+                  <p>{sourceSmokeMessage}</p>
+                </div>
+                <strong className={sourceSmokeResult?.summary.ready ? 'module-status-ok' : 'module-status-warn'}>
+                  {sourceSmokeResult ? (sourceSmokeResult.summary.ready ? 'all ready' : 'action needed') : 'not run'}
+                </strong>
+              </div>
+              {sourceSmokeResult ? (
+                <>
+                  <div className="smoke-summary">
+                    <span><strong>{sourceSmokeResult.summary.pass}</strong> pass</span>
+                    <span><strong>{sourceSmokeResult.summary.warning}</strong> warning</span>
+                    <span><strong>{sourceSmokeResult.summary.blocked}</strong> blocked</span>
+                    <span><strong>{sourceSmokeResult.summary.fail}</strong> fail</span>
+                  </div>
+                  <div className="smoke-grid">
+                    {sourceSmokeResult.checks.map((check) => (
+                      <div className={`smoke-check is-${check.status}`} key={check.key}>
+                        <div>
+                          <strong>{check.label}</strong>
+                          <span>{check.category.replace(/_/g, ' ')}</span>
+                        </div>
+                        <em>{check.status}</em>
+                        <p>{check.detail}</p>
+                        <small>{check.action}</small>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p>Run the full check to verify public candles, local cache replay, congressional data, and each configured provider probe.</p>
+              )}
+            </article>
+
+            <article className="module-card is-wide">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Collect starter data</h3>
+                  <p>{sourceCollectMessage}</p>
+                </div>
+                <strong className={cacheRows ? 'module-status-ok' : 'module-status-warn'}>
+                  {cacheRows.toLocaleString()} cached rows
+                </strong>
+              </div>
+              <div className="action-row">
+                <button className="run-button" type="button" onClick={collectDefaultData}>
+                  <DownloadIcon />
+                  Collect defaults
+                </button>
+                <button className="reset-button" type="button" onClick={loadCandleCache}>
+                  <DatabaseIcon />
+                  Refresh cache
+                </button>
+              </div>
+              {sourceCollectResults.length ? (
+                <div className="collection-grid">
+                  {sourceCollectResults.map((result) => (
+                    <div className={`collection-result is-${result.status}`} key={result.key}>
+                      <strong>{result.label}</strong>
+                      <em>{result.status}</em>
+                      <span>{result.rows.toLocaleString()} rows</span>
+                      <p>{result.detail}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p>Collect defaults seeds Sample CSV, Coinbase BTC-USD, Yahoo AAPL, and any configured Tradovate, Polygon, or E*TRADE source into local storage.</p>
+              )}
+            </article>
+
+            <article className="module-card is-wide">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Cached candle datasets</h3>
+                  <p>Replay these with Data source set to Cached candles.</p>
+                </div>
+                <strong className={cacheDatasets.length ? 'module-status-ok' : 'module-status-warn'}>
+                  {cacheDatasets.length} datasets
+                </strong>
+              </div>
+              {cacheDatasets.length ? (
+                <>
+                  <ul className="cache-dataset-list">
+                    {cacheDatasets.map((dataset) => (
+                      <li key={`${dataset.source}-${dataset.symbol}-${dataset.timeframe}`}>
+                        <span>{dataset.source} · {dataset.symbol} · {dataset.timeframe}</span>
+                        <strong>{dataset.rows.toLocaleString()} rows</strong>
+                        <button className="reset-button" type="button" onClick={() => previewCacheDataset(dataset)}>
+                          Preview
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  {cachePreview ? (
+                    <CandleRowsTable
+                      candles={cachePreview.candles}
+                      rows={cachePreview.rows}
+                      title={`${cachePreview.symbol} cached candles`}
+                    />
+                  ) : null}
+                </>
+              ) : (
+                <p>No cached candles yet. Collect defaults or use Collect candles on the Backtest page.</p>
+              )}
+            </article>
+
+            {sourceDiagnostics.map((source) => (
+              <article className="module-card" key={source.key}>
+                <div className="provider-card-header">
+                  <div>
+                    <h3>{source.label}</h3>
+                    <p>{source.detail}</p>
+                  </div>
+                  <strong className={source.status === 'ok' || source.status === 'ready' ? 'module-status-ok' : 'module-status-warn'}>
+                    {source.status.replace(/_/g, ' ')}
+                  </strong>
+                </div>
+                <ul>
+                  <li><span>Configured</span><strong>{source.configured ? 'yes' : 'no'}</strong></li>
+                  <li><span>Rows / records</span><strong>{source.rows.toLocaleString()}</strong></li>
+                  <li><span>Source key</span><strong>{source.key}</strong></li>
+                </ul>
+                {source.next_steps?.length ? (
+                  <div className="next-steps">
+                    <span>Next steps</span>
+                    <ol>
+                      {source.next_steps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ol>
+                  </div>
+                ) : null}
+                <pre className="live-json">{summarizePayload(source.preview)}</pre>
+              </article>
+            ))}
           </>
         )}
 
@@ -1392,7 +2335,11 @@ function ModulePanel({
                   <span>Data source</span>
                   <select value={optionForm.source} onChange={(event) => updateOptionField('source', event.target.value)}>
                     <option value="sample">Sample CSV</option>
+                    <option value="coinbase">Coinbase crypto</option>
+                    <option value="yahoo">Yahoo Finance</option>
                     <option value="tradovate">Tradovate</option>
+                    <option value="polygon">Polygon</option>
+                    <option value="cache">Cached candles</option>
                   </select>
                 </label>
                 <label className="provider-field">
@@ -1458,6 +2405,10 @@ function ModulePanel({
           <>
             <article className="module-card">
               <h3>Congressional disclosure replay</h3>
+              <button className="reset-button" type="button" onClick={syncCongressTrades} disabled={congressSyncing}>
+                <DownloadIcon />
+                {congressSyncing ? 'Syncing' : 'Sync disclosures'}
+              </button>
               <label className="provider-field">
                 <span>Holding days</span>
                 <input value={congressHoldingDays} onChange={(event) => setCongressHoldingDays(event.target.value)} />
@@ -1480,6 +2431,20 @@ function ModulePanel({
                 </ul>
               ) : (
                 <p>No congressional replay has been run in this session yet.</p>
+              )}
+            </article>
+
+            <article className="module-card">
+              <h3>Disclosure sync</h3>
+              {congressIngestResult ? (
+                <ul>
+                  <li><span>Total rows</span><strong>{congressIngestResult.counts.total.toLocaleString()}</strong></li>
+                  <li><span>House parsed</span><strong>{congressIngestResult.house.parsed.toLocaleString()}</strong></li>
+                  <li><span>House inserted</span><strong>{congressIngestResult.house.inserted.toLocaleString()}</strong></li>
+                  <li><span>Senate status</span><strong>{congressIngestResult.senate.status.replace(/_/g, ' ')}</strong></li>
+                </ul>
+              ) : (
+                <p>Sync recent House PTR PDFs and Senate eFD-derived summaries before replaying disclosures.</p>
               )}
             </article>
 
@@ -1572,13 +2537,26 @@ function ModulePanel({
                         <option value="live">live</option>
                       </select>
                     ) : (
-                      <input
-                        autoComplete="off"
-                        placeholder={field.secret ? (field.configured ? 'Leave blank to keep saved value' : 'Paste key or secret') : field.value}
-                        type={field.secret ? 'password' : 'text'}
-                        value={providerForms[provider.key]?.[field.key] ?? (field.secret ? '' : field.value ?? '')}
-                        onChange={(event) => updateProviderField(provider.key, field.key, event.target.value)}
-                      />
+                      <div className="provider-input-row">
+                        <input
+                          autoComplete="off"
+                          placeholder={field.secret ? (field.configured ? 'Leave blank to keep saved value' : 'Paste key or secret') : field.value}
+                          type={field.secret ? 'password' : 'text'}
+                          value={providerForms[provider.key]?.[field.key] ?? (field.secret ? '' : field.value ?? '')}
+                          onChange={(event) => updateProviderField(provider.key, field.key, event.target.value)}
+                        />
+                        {field.secret && field.configured ? (
+                          <button
+                            aria-label={`Clear ${field.label}`}
+                            className="field-clear-button"
+                            disabled={savingProvider === provider.key}
+                            onClick={() => clearProviderField(provider.key, field.key)}
+                            type="button"
+                          >
+                            Clear
+                          </button>
+                        ) : null}
+                      </div>
                     )}
                   </label>
                 ))}
@@ -1613,8 +2591,9 @@ function ModulePanel({
         <article className="module-card">
           <h3>Build status</h3>
           <p>
-            This module has honest app state now. Backtest, strategy metadata, route discovery,
-            result summary, and trade export are wired; notebook/settings still need real persistence.
+            Core workflows are wired end-to-end: backtest + strategy metadata, live data,
+            route discovery, paper trading, options replay, source diagnostics, and settings
+            persistence through the API.
           </p>
         </article>
       </div>
@@ -2033,13 +3012,13 @@ function average(values: number[]) {
 function moduleTitle(activeNav: string) {
   const titles: Record<string, string> = {
     'Live Data': 'E*TRADE live market data collection',
+    'Data Sources': 'Market data source diagnostics',
     'Paper Trade': 'Forward paper validation',
     Options: 'Options strategy replay',
     Congress: 'Congressional disclosure backtesting',
     Strategies: 'Strategy registry from the backend',
     Results: 'Last completed run',
     Exports: 'Download research artifacts',
-    Notebook: 'Research notebook is not persisted yet',
     Settings: 'Server and broker configuration',
   };
   return titles[activeNav] ?? 'Module status';
@@ -2048,16 +3027,48 @@ function moduleTitle(activeNav: string) {
 function moduleDescription(activeNav: string) {
   const descriptions: Record<string, string> = {
     'Live Data': 'Connect E*TRADE through OAuth, fetch quote snapshots, and save them into the local market-data collection store.',
+    'Data Sources': 'Probe every configured source, inspect row counts, and see source-specific errors before trusting a backtest.',
     'Paper Trade': 'Create paper-only sessions, mark them with live E*TRADE quotes or manual prices, and compare the future equity trail against your backtest thesis.',
     Options: 'Replay option payoff strategies against the same underlying candle sources used by the backtest engine.',
     Congress: 'Review locally stored congressional disclosures and replay them against deterministic futures proxies.',
     Strategies: 'The frontend reads the backend strategy registry so the available modules are no longer just decorative labels.',
     Results: 'This view reflects the latest successful backtest response currently held in app state.',
     Exports: 'CSV export is wired to the visible trades after search and win/loss filtering.',
-    Notebook: 'This still needs a persistence layer before notes can be saved across sessions.',
     Settings: 'Broker credentials stay in .env on the server; the browser can only see source availability.',
   };
   return descriptions[activeNav] ?? 'The backtest workspace is the primary wired module right now.';
+}
+
+function sourceWorkbenchDefaults(source: SourceWorkbenchSource): SourceWorkbenchForm {
+  if (source === 'sample') {
+    return { source, symbol: 'ES', timeframe: '1min', from: '2025-01-02', to: '2025-01-02', detailFlag: 'ALL' };
+  }
+  if (source === 'coinbase') {
+    return { source, symbol: 'BTC-USD', timeframe: '1d', from: '2025-01-02', to: '2025-01-31', detailFlag: 'ALL' };
+  }
+  if (source === 'yahoo') {
+    return { source, symbol: 'AAPL', timeframe: '1d', from: '2025-01-02', to: '2025-01-31', detailFlag: 'ALL' };
+  }
+  if (source === 'tradovate') {
+    return { source, symbol: 'ES', timeframe: '1min', from: '2025-01-02', to: '2025-01-02', detailFlag: 'ALL' };
+  }
+  if (source === 'polygon') {
+    return { source, symbol: 'AAPL', timeframe: '1d', from: '2025-01-02', to: '2025-01-10', detailFlag: 'ALL' };
+  }
+  if (source === 'etrade_market_data') {
+    return { source, symbol: 'AAPL', timeframe: '1d', from: '2025-01-02', to: '2025-01-31', detailFlag: 'ALL' };
+  }
+  return { source, symbol: 'AAPL', timeframe: '1d', from: '2025-01-02', to: '2025-01-31', detailFlag: 'ALL' };
+}
+
+function sourceWorkbenchParams(form: SourceWorkbenchForm) {
+  return new URLSearchParams({
+    source: form.source,
+    symbol: form.symbol,
+    timeframe: form.timeframe,
+    from: form.from,
+    to: form.to,
+  });
 }
 
 function formatSigned(value: number) {
@@ -2073,6 +3084,18 @@ function formatCurrency(value: number) {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   })}`;
+}
+
+function formatOptionalPrice(value: number | null) {
+  return typeof value === 'number' && Number.isFinite(value) ? formatCurrency(value) : 'n/a';
+}
+
+function formatNumber(value: unknown) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return 'n/a';
+  return parsed.toLocaleString(undefined, {
+    maximumFractionDigits: Math.abs(parsed) >= 1000 ? 0 : 4,
+  });
 }
 
 function toFixed(value: unknown) {
@@ -2204,6 +3227,16 @@ function ChartIcon() {
       <path d="M4 19V5" />
       <path d="M4 19h16" />
       <path d="M7 15l4-4 3 2 5-7" />
+    </IconSvg>
+  );
+}
+
+function DatabaseIcon() {
+  return (
+    <IconSvg>
+      <ellipse cx="12" cy="5" rx="7" ry="3" />
+      <path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5" />
+      <path d="M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
     </IconSvg>
   );
 }

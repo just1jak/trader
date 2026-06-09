@@ -62,8 +62,11 @@ class ETradeClient:
             'Accept': 'application/x-www-form-urlencoded',
             'Authorization': self._authorization_header('GET', url, {}, oauth_params=oauth_params, token_secret=''),
         }
-        response = self.session.get(url, headers=headers, timeout=20)
-        response.raise_for_status()
+        try:
+            response = self.session.get(url, headers=headers, timeout=20)
+        except requests.RequestException as exc:
+            raise ETradeConfigError(f'E*TRADE request token request failed: {exc}') from exc
+        self._raise_for_status(response, 'request token')
         payload = dict(parse_qsl(response.text))
         if not payload.get('oauth_token') or not payload.get('oauth_token_secret'):
             raise ETradeConfigError('E*TRADE did not return a request token.')
@@ -94,8 +97,11 @@ class ETradeClient:
                 token_secret=request_token_secret,
             ),
         }
-        response = self.session.get(url, headers=headers, timeout=20)
-        response.raise_for_status()
+        try:
+            response = self.session.get(url, headers=headers, timeout=20)
+        except requests.RequestException as exc:
+            raise ETradeConfigError(f'E*TRADE access token exchange failed: {exc}') from exc
+        self._raise_for_status(response, 'access token exchange')
         payload = dict(parse_qsl(response.text))
         if not payload.get('oauth_token') or not payload.get('oauth_token_secret'):
             raise ETradeConfigError('E*TRADE did not return an access token.')
@@ -108,8 +114,11 @@ class ETradeClient:
             'Accept': 'text/plain',
             'Authorization': self._authorization_header('GET', url, {}),
         }
-        response = self.session.get(url, headers=headers, timeout=20)
-        response.raise_for_status()
+        try:
+            response = self.session.get(url, headers=headers, timeout=20)
+        except requests.RequestException as exc:
+            raise ETradeConfigError(f'E*TRADE token renewal request failed: {exc}') from exc
+        self._raise_for_status(response, 'access token renewal')
         return response.text or 'Access token renewed'
 
     def get_quote(self, symbols, detail_flag='ALL'):
@@ -163,9 +172,20 @@ class ETradeClient:
             'Accept': 'application/json',
             'Authorization': self._authorization_header('GET', url, params),
         }
-        response = self.session.get(url, params=params, headers=headers, timeout=20)
-        response.raise_for_status()
+        try:
+            response = self.session.get(url, params=params, headers=headers, timeout=20)
+        except requests.RequestException as exc:
+            raise ETradeConfigError(f'E*TRADE market request failed: {exc}') from exc
+        self._raise_for_status(response, 'market data')
         return response.json()
+
+    def _raise_for_status(self, response, context):
+        if response.status_code in (401, 403):
+            raise ETradeConfigError(
+                f'E*TRADE {context} authorization failed. Access tokens can expire daily; '
+                'reconnect from Live Data -> Connect E*TRADE and confirm sandbox/live environment matches the token.'
+            )
+        response.raise_for_status()
 
     def _base_oauth_params(self, oauth_token=None):
         oauth_params = {

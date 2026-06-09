@@ -22,6 +22,8 @@ def load_sample_candles(symbol='ES', timeframe='1min', start=None, end=None):
         raise FileNotFoundError(f'Sample data file not found: {path}')
 
     data = pd.read_csv(path, parse_dates=['timestamp'])
+    if data.empty:
+        raise ValueError('Sample candle file exists but contained no rows.')
     data.set_index('timestamp', inplace=True)
     data = _filter_date_range(data, start, end)
     data = _resample(data, timeframe)
