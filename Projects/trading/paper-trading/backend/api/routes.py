@@ -474,6 +474,10 @@ class BacktestResource(Resource):
     @api.response(500, 'Internal Server Error')
     def post(self):
         payload = api.payload or {}
+        required_fields = ['symbol', 'from', 'to', 'timeframe', 'strategy']
+        missing = [field for field in required_fields if payload.get(field) in (None, '')]
+        if missing:
+            return {'error': f'Missing required field(s): {", ".join(missing)}'}, 400
         try:
             candles = _load_backtest_candles(payload)
             if candles.empty:
@@ -666,6 +670,10 @@ class OptionsBacktestResource(Resource):
     @api.response(400, 'Validation Error')
     def post(self):
         payload = api.payload or {}
+        required_fields = ['symbol', 'from', 'to', 'option_type', 'strike', 'premium']
+        missing = [field for field in required_fields if payload.get(field) in (None, '')]
+        if missing:
+            return {'error': f'Missing required field(s): {", ".join(missing)}'}, 400
         try:
             candles = _load_backtest_candles(payload)
             results = run_long_option_backtest(
