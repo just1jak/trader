@@ -228,15 +228,15 @@ Additional dashboard modules:
 - `Options` — simulation-only options payoff strategy replay.
 - `Congress` — House PTR sync, Senate eFD-derived sync, local congressional disclosure replay, and stored disclosure preview.
 
-The Vite dev server proxies `/api` to `http://localhost:5000` by default, and the frontend also uses `VITE_BACKEND_URL` when explicitly set.
-If macOS has another service on port `5000`, use an alternate backend port and point Vite at it:
+The Vite dev server proxies `/api` to `http://localhost:5001` by default, and the frontend also uses `VITE_BACKEND_URL` when explicitly set.
+This avoids the common macOS conflict where AirPlay Receiver / Control Center already owns port `5000`. If port `5001` is already taken, use an alternate backend port and point Vite at it:
 
 ```bash
 cd paper-trading/backend
-PORT=5001 python3 app.py
+PORT=5002 python3 app.py
 
 cd ../frontend
-VITE_BACKEND_URL=http://localhost:5001 npm run dev
+VITE_BACKEND_URL=http://localhost:5002 npm run dev
 ```
 
 Frontend deployment files:
@@ -290,7 +290,7 @@ Use the production compose file when deploying the full app to a server.
 
 ```text
 FRONTEND_PORT=80
-BACKEND_PORT=5000
+BACKEND_PORT=5001
 ```
 
 4. Build and start:
@@ -309,7 +309,7 @@ docker compose -f docker-compose.prod.yml ps
 6. Check backend health manually from the server:
 
 ```bash
-curl http://localhost:${BACKEND_PORT:-5000}/api/v1/market/backtest-data?symbol=ES\&source=sample\&timeframe=1min\&from=2025-01-02\&to=2025-01-02
+curl http://localhost:${BACKEND_PORT:-5001}/api/v1/market/backtest-data?symbol=ES\&source=sample\&timeframe=1min\&from=2025-01-02\&to=2025-01-02
 ```
 
 7. Open the frontend:

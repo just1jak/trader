@@ -27,19 +27,20 @@ A Flask + React application for backtesting and paper trading strategies across 
 ### Setup
 1. Copy `.env.example` to `.env` and fill in your secrets.
 2. Run `docker compose up --build`
-3. Backend API available at `http://localhost:5000`
+3. Backend API available at `http://localhost:5001`
 4. Frontend available at `http://localhost:5173`
 
 When running Docker Compose, the frontend container talks to the backend container at `http://backend:5000` (this is already wired in `docker-compose.yml`), so the UI can call API routes without extra host remapping.
+The backend is exposed on host port `5001` by default because macOS often reserves `5000` for AirPlay Receiver / Control Center.
 
-If port `5000` is already taken, use an alternate backend port and point Vite at it:
+If port `5001` is already taken, use an alternate backend port and point Vite at it:
 
 ```bash
 cd backend
-PORT=5001 python3 app.py
+PORT=5002 python3 app.py
 
 cd ../frontend
-VITE_BACKEND_URL=http://localhost:5001 npm run dev
+VITE_BACKEND_URL=http://localhost:5002 npm run dev
 ```
 
 ## Provider Settings
