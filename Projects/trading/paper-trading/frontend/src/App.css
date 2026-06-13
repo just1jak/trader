@@ -220,6 +220,10 @@ button {
   font-weight: 760;
 }
 
+.rail-card button:hover {
+  filter: brightness(1.07);
+}
+
 .rail-status {
   display: flex;
   align-items: center;
@@ -291,6 +295,15 @@ button {
 .system-status strong {
   color: #ffffff;
   font-weight: 760;
+}
+
+.system-status .status-message {
+  color: #f3f7f3;
+  font-weight: 690;
+}
+
+.system-status .status-context {
+  color: #8ea095;
 }
 
 .system-status .icon {
@@ -464,6 +477,13 @@ button {
 .reset-button:hover {
   color: #ffffff;
   border-color: rgba(255, 255, 255, 0.24);
+}
+
+.reset-button:disabled,
+.chart-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  filter: saturate(0.7);
 }
 
 .run-button .icon,
@@ -1703,6 +1723,9 @@ tbody tr.is-selected {
   display: flex;
   align-items: center;
   gap: 8px;
+  color: #98a79f;
+  font-size: 12px;
+  font-weight: 650;
 }
 
 .pagination button,
@@ -1727,6 +1750,10 @@ tbody tr.is-selected {
 .pagination button .icon {
   width: 15px;
   height: 15px;
+}
+
+.pagination span {
+  color: inherit;
 }
 
 .insight-panel {

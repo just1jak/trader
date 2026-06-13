@@ -680,6 +680,9 @@ function App() {
     return matchesSearch && matchesFilter;
   });
 
+  const statusMessage = lastAction || (dataPreview ? `${dataPreview.rows} candles loaded` : 'Waiting for first backend run');
+  const statusContext = dataPreview ? `${dataPreview.rows} candles loaded` : apiHealth?.status === 'ok' ? 'API online' : 'Waiting for backend';
+
   useEffect(() => {
     const loadBackendStatus = async () => {
     const [health, strategies] = await Promise.all([
@@ -1389,7 +1392,7 @@ function App() {
           <div className="rail-card">
             <span>Simulation mode</span>
             <p>All trades simulated. No live orders sent.</p>
-            <button type="button">Review risk</button>
+            <button type="button" onClick={() => setActiveNav('Data Sources')}>Review risk</button>
           </div>
 
           <div className="rail-status">
@@ -1410,7 +1413,9 @@ function App() {
             <span className="status-dot" />
             <strong>Simulation only</strong>
             <span className="muted-dot" />
-            <span>{dataPreview ? `${dataPreview.rows} candles loaded` : lastAction}</span>
+            <span className="status-message">{statusMessage}</span>
+            <span className="muted-dot" />
+            <span className="status-context">{statusContext}</span>
             <SunIcon />
           </div>
         </header>
@@ -2453,7 +2458,7 @@ function ModulePanel({
               <ul>
                 {congressTrades.length ? (
                   congressTrades.slice(0, 10).map((trade) => (
-                    <li key={`${trade.chamber}-${trade.member}-${trade.ticker}-${trade.transaction_date}`}>
+                    <li key={`${trade.chamber}-${trade.member}-${trade.ticker}-${trade.transaction_date}-${trade.transaction_type}-${trade.amount}`}>
                       <span>{trade.transaction_date} · {trade.member} · {trade.ticker}</span>
                       <strong>{trade.chamber} {trade.transaction_type} {trade.amount}</strong>
                     </li>
@@ -2650,10 +2655,10 @@ function EquityPanel({
               {range}
             </button>
           ))}
-          <button className="icon-button" type="button" aria-label="Expand chart">
+          <button className="icon-button" type="button" aria-label="Expand chart" disabled title="Chart expansion is not available in this build">
             <ExpandIcon />
           </button>
-          <button className="icon-button" type="button" aria-label="Chart menu">
+          <button className="icon-button" type="button" aria-label="Chart menu" disabled title="Chart menu is not available in this build">
             <MenuIcon />
           </button>
         </div>
@@ -2793,24 +2798,9 @@ function TradesPanel({
         <span>
           Showing {filteredTrades.length ? 1 : 0} to {filteredTrades.length} of {totalTrades} trades
         </span>
-        <div className="pagination">
-          <button type="button" aria-label="Previous page">
-            <ChevronLeftIcon />
-          </button>
-          <button className="is-active" type="button">
-            1
-          </button>
-          <button type="button">2</button>
-          <button type="button">3</button>
-          <span>...</span>
-          <button type="button">8</button>
-          <button type="button" aria-label="Next page">
-            <ChevronRightIcon />
-          </button>
-          <select aria-label="Rows per page">
-            <option>10 / page</option>
-            <option>25 / page</option>
-          </select>
+        <div className="pagination" aria-label="Pagination status">
+          <span>Single page view</span>
+          <span>{filteredTrades.length} rows visible</span>
         </div>
       </footer>
     </section>
@@ -3313,22 +3303,6 @@ function FilterIcon() {
   return (
     <IconSvg>
       <path d="M4 6h16l-6 7v5l-4 2v-7z" />
-    </IconSvg>
-  );
-}
-
-function ChevronLeftIcon() {
-  return (
-    <IconSvg>
-      <path d="M15 18l-6-6 6-6" />
-    </IconSvg>
-  );
-}
-
-function ChevronRightIcon() {
-  return (
-    <IconSvg>
-      <path d="M9 6l6 6-6 6" />
     </IconSvg>
   );
 }
