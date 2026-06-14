@@ -733,6 +733,23 @@ button {
   word-break: break-word;
 }
 
+.glossary-card li {
+  grid-template-columns: minmax(120px, 170px) minmax(0, 1fr);
+  align-items: start;
+}
+
+.glossary-card li span {
+  color: #f0f5f0;
+}
+
+.glossary-card li strong {
+  color: #b8c4bd;
+  font-size: 13px;
+  font-weight: 620;
+  line-height: 1.5;
+  text-align: left;
+}
+
 .paper-session-list li {
   display: block;
 }

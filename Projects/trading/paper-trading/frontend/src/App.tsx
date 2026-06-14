@@ -576,6 +576,30 @@ const navItems = [
   { label: 'Settings', icon: <CogIcon /> },
 ];
 
+const optionSourceLabels: Record<OptionsForm['source'], string> = {
+  sample: 'Sample CSV underlying candles',
+  coinbase: 'Coinbase crypto candles',
+  yahoo: 'Yahoo Finance stock or ETF candles',
+  tradovate: 'Tradovate futures candles',
+  polygon: 'Polygon aggregate stock candles',
+  cache: 'Locally cached candles collected earlier',
+};
+
+const optionKeyTerms = [
+  ['Call', 'A contract that gives the buyer the right to buy the underlying at the strike price before expiration.'],
+  ['Put', 'A contract that gives the buyer the right to sell the underlying at the strike price before expiration.'],
+  ['Strike', 'The price where the option begins to have intrinsic value if it finishes in the money.'],
+  ['Premium', 'The upfront amount paid for the option. In a spread, net debit is long premium minus short premium.'],
+  ['Expiration', 'The last date the option exists. After expiration, only the final payoff matters.'],
+  ['Contract multiplier', 'How many units one contract controls. Equity-style options usually use 100.'],
+  ['Intrinsic value', 'The immediate exercise value. Calls use max(underlying minus strike, 0); puts use max(strike minus underlying, 0).'],
+  ['Time value', 'The part of premium above intrinsic value, driven by time remaining and volatility expectations.'],
+  ['Break-even', 'For a long call it is strike plus premium. For a long put it is strike minus premium.'],
+  ['In the money', 'A call is in the money when the underlying is above the strike. A put is in the money when it is below the strike.'],
+  ['Out of the money', 'A call is out of the money when the underlying is below the strike. A put is out of the money when it is above the strike.'],
+  ['Greeks', 'Delta, theta, vega, and gamma describe sensitivity to price, time, volatility, and curvature. This replay does not model them.'],
+] as const;
+
 const defaultSourceWorkbenchForm: SourceWorkbenchForm = {
   source: 'yahoo',
   symbol: 'AAPL',
@@ -2313,6 +2337,10 @@ function ModulePanel({
           <>
             <article className="module-card is-wide">
               <h3>Options strategy replay</h3>
+              <p>
+                This replay estimates option payoff from the selected underlying candle source plus the strike and premium you enter here.
+                It does not fetch historical option candles for the contract itself.
+              </p>
               <div className="module-form-grid">
                 <label className="provider-field">
                   <span>Symbol</span>
@@ -2375,6 +2403,19 @@ function ModulePanel({
             </article>
 
             <article className="module-card">
+              <h3>Replay data source</h3>
+              <p>
+                The simulator uses the underlying market path from the selected source, then applies option payoff math on top of that path.
+              </p>
+              <ul>
+                <li><span>Underlying candles</span><strong>{optionSourceLabels[optionForm.source]}</strong></li>
+                <li><span>Option pricing inputs</span><strong>Strike, premium, contracts, and spread legs are entered manually</strong></li>
+                <li><span>Valuation method</span><strong>Intrinsic value at each underlying close</strong></li>
+                <li><span>Live chain support</span><strong>E*TRADE expirations and chains exist in the backend, but are not yet wired into this replay</strong></li>
+              </ul>
+            </article>
+
+            <article className="module-card">
               <h3>Options result</h3>
               {optionResults ? (
                 <ul>
@@ -2399,6 +2440,21 @@ function ModulePanel({
                   <li key={assumption}>
                     <span>{assumption}</span>
                     <strong>simulation</strong>
+                  </li>
+                ))}
+              </ul>
+            </article>
+
+            <article className="module-card is-wide glossary-card">
+              <h3>How options work</h3>
+              <p>
+                Options give you a right tied to an underlying asset. Your payoff depends on where the underlying moves relative to the strike, how much premium you paid, and how much time and volatility remain.
+              </p>
+              <ul>
+                {optionKeyTerms.map(([term, definition]) => (
+                  <li key={term}>
+                    <span>{term}</span>
+                    <strong>{definition}</strong>
                   </li>
                 ))}
               </ul>
