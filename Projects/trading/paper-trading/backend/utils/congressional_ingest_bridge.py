@@ -7,12 +7,15 @@ INGEST_PATH = PROJECT_ROOT / 'congressional-trading' / 'congress_ingest.py'
 DB_PATH = PROJECT_ROOT / 'congressional-trading' / 'congress_trades.db'
 
 
-def sync_congressional_disclosures(year=None, limit=25, include_senate=False):
+def sync_congressional_disclosures(year=None, start_year=None, end_year=None, limit=25, include_senate=False, all_history=False):
     module = _load_ingest_module()
     return module.sync_congressional_disclosures(
         year=year,
+        start_year=start_year,
+        end_year=end_year,
         limit=limit,
         include_senate=include_senate,
+        all_history=all_history,
         db_path=DB_PATH,
     )
 

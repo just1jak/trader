@@ -333,10 +333,24 @@ type CongressResult = {
   message: string;
 };
 
+type CongressYearSpan = {
+  start: number | null;
+  end: number | null;
+  count: number;
+  label: string;
+};
+
 type CongressIngestSummary = {
   status: string;
-  year: number;
-  limit: number;
+  request: {
+    year: number | null;
+    start_year: number;
+    end_year: number;
+    all_history: boolean;
+    limit: number | null;
+    include_senate: boolean;
+  };
+  year_span: CongressYearSpan;
   counts: {
     house: number;
     senate: number;
@@ -344,6 +358,11 @@ type CongressIngestSummary = {
   };
   house: {
     status: string;
+    limit: number | null;
+    year_span: CongressYearSpan;
+    years_requested: number[];
+    years_with_reports: number[];
+    years_with_data: number[];
     reports_available: number;
     reports_downloaded: number;
     parsed: number;
@@ -351,11 +370,23 @@ type CongressIngestSummary = {
     errors: Array<Record<string, unknown>>;
   };
   senate: {
+    source: string;
     status: string;
+    year_span: CongressYearSpan;
+    reports_available: number;
+    reports_downloaded: number;
     parsed: number;
     inserted: number;
     errors: string[];
   };
+};
+
+type CongressSyncForm = {
+  start_year: string;
+  end_year: string;
+  limit: string;
+  include_senate: boolean;
+  all_history: boolean;
 };
 
 const strategyOptions: Array<{
@@ -614,6 +645,7 @@ function App() {
   const callApiSilent = <T,>(url: string, options: RequestInit = {}) => {
     return callApi<T>(url, { ...options, silent: true });
   };
+  const currentYear = new Date().getFullYear();
   const [activeNav, setActiveNav] = useState('Backtest');
   const [formData, setFormData] = useState<BacktestForm>({
     symbol: 'ES',
@@ -681,6 +713,13 @@ function App() {
   });
   const [optionResults, setOptionResults] = useState<OptionsResult | null>(null);
   const [congressHoldingDays, setCongressHoldingDays] = useState('5');
+  const [congressSyncForm, setCongressSyncForm] = useState<CongressSyncForm>({
+    start_year: '2008',
+    end_year: String(currentYear),
+    limit: '',
+    include_senate: true,
+    all_history: true,
+  });
   const [congressTrades, setCongressTrades] = useState<CongressTrade[]>([]);
   const [congressResult, setCongressResult] = useState<CongressResult | null>(null);
   const [congressIngestResult, setCongressIngestResult] = useState<CongressIngestSummary | null>(null);
@@ -1349,9 +1388,16 @@ function App() {
   };
 
   const loadCongressTrades = async () => {
-    const data = await callApiSilent<{ trades: CongressTrade[] }>('/api/v1/congress/trades?limit=25');
+    const data = await callApiSilent<{ trades: CongressTrade[]; total: number }>('/api/v1/congress/trades?limit=25');
     if (data?.trades) setCongressTrades(data.trades);
     return data;
+  };
+
+  const updateCongressSyncField = <K extends keyof CongressSyncForm>(field: K, value: CongressSyncForm[K]) => {
+    setCongressSyncForm((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
   };
 
   const runCongressBacktest = async () => {
@@ -1367,19 +1413,31 @@ function App() {
 
   const syncCongressTrades = async () => {
     setCongressSyncing(true);
-    const year = new Date().getFullYear();
     try {
+      const trimmedLimit = congressSyncForm.limit.trim();
+      const trimmedStartYear = congressSyncForm.start_year.trim();
+      const trimmedEndYear = congressSyncForm.end_year.trim();
+      const payload: Record<string, number | boolean | null> = {
+        start_year: trimmedStartYear ? Number(trimmedStartYear) : null,
+        end_year: trimmedEndYear ? Number(trimmedEndYear) : null,
+        limit: trimmedLimit ? Number(trimmedLimit) : 0,
+        include_senate: congressSyncForm.include_senate,
+        all_history: congressSyncForm.all_history,
+      };
+      if (!congressSyncForm.all_history && payload.start_year && payload.start_year === payload.end_year) {
+        payload.year = payload.start_year;
+      }
       const data = await callApi<{ summary: CongressIngestSummary; trades: { trades: CongressTrade[] }; message: string }>(
         '/api/v1/congress/ingest',
         {
           method: 'POST',
-          body: JSON.stringify({ year, limit: 25, include_senate: true }),
+          body: JSON.stringify(payload),
         },
       );
       if (data?.summary) {
         setCongressIngestResult(data.summary);
         setCongressTrades(data.trades?.trades ?? congressTrades);
-        loadSourceDiagnostics(false, true);
+        await loadSourceDiagnostics(false, true);
         setLastAction(`Synced ${data.summary.counts.total} congressional disclosure rows`);
       }
     } finally {
@@ -1454,6 +1512,7 @@ function App() {
             congressHoldingDays={congressHoldingDays}
             congressIngestResult={congressIngestResult}
             congressResult={congressResult}
+            congressSyncForm={congressSyncForm}
             congressSyncing={congressSyncing}
             congressTrades={congressTrades}
             exportTradesCsv={exportTradesCsv}
@@ -1485,6 +1544,7 @@ function App() {
             setCongressHoldingDays={setCongressHoldingDays}
             setLiveSymbols={setLiveSymbols}
             setOauthVerifier={setOauthVerifier}
+            updateCongressSyncField={updateCongressSyncField}
             selectedPaperSessionId={selectedPaperSessionId}
             selectPaperSession={selectPaperSession}
             sourceDiagnostics={sourceDiagnostics}
@@ -1740,6 +1800,7 @@ function ModulePanel({
   congressHoldingDays,
   congressIngestResult,
   congressResult,
+  congressSyncForm,
   congressSyncing,
   congressTrades,
   exportTradesCsv,
@@ -1771,6 +1832,7 @@ function ModulePanel({
   setCongressHoldingDays,
   setLiveSymbols,
   setOauthVerifier,
+  updateCongressSyncField,
   selectedPaperSessionId,
   selectPaperSession,
   sourceDiagnostics,
@@ -1807,6 +1869,7 @@ function ModulePanel({
   congressHoldingDays: string;
   congressIngestResult: CongressIngestSummary | null;
   congressResult: CongressResult | null;
+  congressSyncForm: CongressSyncForm;
   congressSyncing: boolean;
   congressTrades: CongressTrade[];
   exportTradesCsv: () => void;
@@ -1837,6 +1900,7 @@ function ModulePanel({
   setCongressHoldingDays: (value: string) => void;
   setLiveSymbols: (value: string) => void;
   setOauthVerifier: (value: string) => void;
+  updateCongressSyncField: <K extends keyof CongressSyncForm>(field: K, value: CongressSyncForm[K]) => void;
   selectedPaperSessionId: number | null;
   selectPaperSession: (sessionId: number) => void;
   sourceDiagnostics: SourceDiagnostic[];
@@ -1866,6 +1930,12 @@ function ModulePanel({
 }) {
   const routeEntries = apiHealth ? Object.entries(apiHealth.routes) : [];
   const selectedPaperSession = paperSessions.find((session) => session.id === selectedPaperSessionId) ?? paperSessions[0] ?? null;
+  const congressDiagnostic = sourceDiagnostics.find((source) => source.key === 'congress');
+  const congressCountsPreview = congressDiagnostic?.preview?.counts as { house?: number; senate?: number; total?: number } | undefined;
+  const congressStoredTotal = congressCountsPreview?.total ?? congressDiagnostic?.rows ?? congressIngestResult?.counts.total ?? congressTrades.length;
+  const congressStoredHouse = congressCountsPreview?.house ?? congressIngestResult?.counts.house ?? 0;
+  const congressStoredSenate = congressCountsPreview?.senate ?? congressIngestResult?.counts.senate ?? 0;
+  const congressSyncRangeLabel = congressIngestResult?.year_span.label ?? `${congressSyncForm.start_year || 'n/a'}-${congressSyncForm.end_year || 'n/a'}`;
 
   return (
     <section className="module-panel">
@@ -2464,21 +2534,99 @@ function ModulePanel({
 
         {activeNav === 'Congress' && (
           <>
+            <article className="module-card is-wide">
+              <div className="provider-card-header">
+                <div>
+                  <h3>Congressional disclosure replay</h3>
+                  <p>{congressResult?.message ?? 'Sync House PTR filings and Senate archive rows, then replay the stored trades against the local proxy model.'}</p>
+                </div>
+                <strong className={congressStoredTotal ? 'module-status-ok' : 'module-status-warn'}>
+                  {congressStoredTotal ? `${congressStoredTotal.toLocaleString()} stored` : 'No rows yet'}
+                </strong>
+              </div>
+
+              <div className="module-form-grid">
+                <label className="provider-field">
+                  <span>Start year</span>
+                  <input
+                    value={congressSyncForm.start_year}
+                    onChange={(event) => updateCongressSyncField('start_year', event.target.value)}
+                  />
+                </label>
+                <label className="provider-field">
+                  <span>End year</span>
+                  <input
+                    value={congressSyncForm.end_year}
+                    onChange={(event) => updateCongressSyncField('end_year', event.target.value)}
+                  />
+                </label>
+                <label className="provider-field">
+                  <span>Max filings / rows</span>
+                  <input
+                    placeholder="blank = all available"
+                    value={congressSyncForm.limit}
+                    onChange={(event) => updateCongressSyncField('limit', event.target.value)}
+                  />
+                </label>
+                <label className="provider-field">
+                  <span>Holding days</span>
+                  <input value={congressHoldingDays} onChange={(event) => setCongressHoldingDays(event.target.value)} />
+                </label>
+              </div>
+
+              <div className="action-row">
+                <label className="checkbox-field">
+                  <input
+                    type="checkbox"
+                    checked={congressSyncForm.all_history}
+                    onChange={(event) => updateCongressSyncField('all_history', event.target.checked)}
+                  />
+                  <span>Pull all available history in this year window</span>
+                </label>
+                <label className="checkbox-field">
+                  <input
+                    type="checkbox"
+                    checked={congressSyncForm.include_senate}
+                    onChange={(event) => updateCongressSyncField('include_senate', event.target.checked)}
+                  />
+                  <span>Include Senate archive rows</span>
+                </label>
+              </div>
+
+              <div className="action-row">
+                <button className="reset-button" type="button" onClick={syncCongressTrades} disabled={congressSyncing}>
+                  <DownloadIcon />
+                  {congressSyncing ? 'Syncing disclosures' : 'Sync disclosures'}
+                </button>
+                <button className="run-button" type="button" onClick={runCongressBacktest}>
+                  <PlayIcon />
+                  Run congress replay
+                </button>
+              </div>
+            </article>
+
             <article className="module-card">
-              <h3>Congressional disclosure replay</h3>
-              <button className="reset-button" type="button" onClick={syncCongressTrades} disabled={congressSyncing}>
-                <DownloadIcon />
-                {congressSyncing ? 'Syncing' : 'Sync disclosures'}
-              </button>
-              <label className="provider-field">
-                <span>Holding days</span>
-                <input value={congressHoldingDays} onChange={(event) => setCongressHoldingDays(event.target.value)} />
-              </label>
-              <button className="run-button" type="button" onClick={runCongressBacktest}>
-                <PlayIcon />
-                Run congress replay
-              </button>
-              <p>{congressResult?.message ?? 'Uses House/Senate disclosures from the local SQLite database.'}</p>
+              <h3>Stored database</h3>
+              <ul>
+                <li><span>Total disclosures</span><strong>{congressStoredTotal.toLocaleString()}</strong></li>
+                <li><span>House rows</span><strong>{congressStoredHouse.toLocaleString()}</strong></li>
+                <li><span>Senate rows</span><strong>{congressStoredSenate.toLocaleString()}</strong></li>
+                <li><span>Latest sync range</span><strong>{congressSyncRangeLabel}</strong></li>
+              </ul>
+            </article>
+
+            <article className="module-card">
+              <h3>Disclosure sync</h3>
+              {congressIngestResult ? (
+                <ul>
+                  <li><span>Total rows</span><strong>{congressIngestResult.counts.total.toLocaleString()}</strong></li>
+                  <li><span>House reports pulled</span><strong>{congressIngestResult.house.reports_downloaded.toLocaleString()}</strong></li>
+                  <li><span>House years with data</span><strong>{congressIngestResult.house.years_with_data.length} / {congressIngestResult.house.years_requested.length}</strong></li>
+                  <li><span>Senate source</span><strong>{congressIngestResult.senate.source.replace(/_/g, ' ')}</strong></li>
+                </ul>
+              ) : (
+                <p>Set a year window, then sync disclosures. Leaving the limit blank now pulls all available rows for the selected range.</p>
+              )}
             </article>
 
             <article className="module-card">
@@ -2492,20 +2640,6 @@ function ModulePanel({
                 </ul>
               ) : (
                 <p>No congressional replay has been run in this session yet.</p>
-              )}
-            </article>
-
-            <article className="module-card">
-              <h3>Disclosure sync</h3>
-              {congressIngestResult ? (
-                <ul>
-                  <li><span>Total rows</span><strong>{congressIngestResult.counts.total.toLocaleString()}</strong></li>
-                  <li><span>House parsed</span><strong>{congressIngestResult.house.parsed.toLocaleString()}</strong></li>
-                  <li><span>House inserted</span><strong>{congressIngestResult.house.inserted.toLocaleString()}</strong></li>
-                  <li><span>Senate status</span><strong>{congressIngestResult.senate.status.replace(/_/g, ' ')}</strong></li>
-                </ul>
-              ) : (
-                <p>Sync recent House PTR PDFs and Senate eFD-derived summaries before replaying disclosures.</p>
               )}
             </article>
 

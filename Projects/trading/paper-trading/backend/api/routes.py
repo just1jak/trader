@@ -123,7 +123,10 @@ congress_backtest_input = api.model('CongressBacktestInput', {
 
 congress_ingest_input = api.model('CongressIngestInput', {
     'year': fields.Integer(required=False, description='Disclosure year to import'),
-    'limit': fields.Integer(required=False, description='Maximum House PTR PDFs to download', default=25),
+    'start_year': fields.Integer(required=False, description='Inclusive first year to import'),
+    'end_year': fields.Integer(required=False, description='Inclusive last year to import'),
+    'limit': fields.Integer(required=False, description='Maximum House reports / Senate rows to import; use 0 for all available'),
+    'all_history': fields.Boolean(required=False, description='Walk the full requested history window instead of only a recent slice', default=False),
     'include_senate': fields.Boolean(required=False, description='Include Senate eFD-derived disclosure ingestion', default=True),
 })
 
@@ -715,13 +718,16 @@ class CongressIngestResource(Resource):
         try:
             summary = sync_congressional_disclosures(
                 year=payload.get('year'),
-                limit=payload.get('limit') or 25,
+                start_year=payload.get('start_year'),
+                end_year=payload.get('end_year'),
+                limit=payload.get('limit'),
                 include_senate=_to_bool(payload.get('include_senate'), default=True),
+                all_history=_to_bool(payload.get('all_history'), default=False),
             )
             return {
                 'summary': _json_ready(summary),
                 'trades': list_congressional_trades(limit=25),
-                'message': 'Congressional disclosure sync completed from House PTR PDFs and Senate eFD-derived data.',
+                'message': 'Congressional disclosure sync completed from House PTR PDFs and Senate disclosure archives.',
             }, 200
         except ValueError as exc:
             return {'error': str(exc)}, 400
