@@ -8,7 +8,10 @@ type StrategyKey =
   | 'delta_scalp'
   | 'ema_scalp'
   | 'support_resistance_flip'
-  | 'volume_profile_orderflow';
+  | 'volume_profile_orderflow'
+  | 'riley_coleman_reversal'
+  | 'riley_coleman_transcript_strict'
+  | 'futures_analytica_orderflow_spread';
 
 type BacktestForm = {
   symbol: string;
@@ -367,7 +370,7 @@ const strategyOptions: Array<{
     key: string;
     label: string;
     suffix?: string;
-    type?: 'number' | 'select';
+    type?: 'number' | 'select' | 'text' | 'checkbox';
     options?: string[];
   }>;
 }> = [
@@ -435,6 +438,77 @@ const strategyOptions: Array<{
       { key: 'lv_breakout_volume_mult', label: 'LVN volume mult' },
     ],
   },
+  {
+    key: 'riley_coleman_reversal',
+    label: 'Riley Coleman Reversal Scalp',
+    summary: 'Tests support/resistance rejections, reversal windows, break-and-retest entries, and fixed risk management from recurring Riley Coleman video themes.',
+    risk: ['Built from public video themes, not verified account statements', 'Needs realistic futures fees and slippage', 'Forward-test micros before risking real size'],
+    params: [
+      { key: 'zone_lookback', label: 'Zone lookback' },
+      { key: 'atr_period', label: 'ATR period' },
+      { key: 'atr_tolerance_mult', label: 'ATR tolerance' },
+      { key: 'retest_tolerance', label: 'Fixed tolerance', suffix: 'pts' },
+      { key: 'volume_mult', label: 'Volume mult' },
+      { key: 'wick_ratio', label: 'Wick ratio' },
+      { key: 'risk_reward', label: 'Risk/reward' },
+      { key: 'stop_atr_mult', label: 'Stop ATR mult' },
+      { key: 'max_hold_bars', label: 'Max hold', suffix: 'bars' },
+      { key: 'use_time_filter', label: 'Use time filter', type: 'checkbox' },
+      { key: 'reversal_windows', label: 'Reversal windows', type: 'text' },
+      { key: 'enable_break_retest', label: 'Break/retest', type: 'checkbox' },
+      { key: 'trend_filter', label: 'Trend filter', type: 'checkbox' },
+      { key: 'trend_ema', label: 'Trend EMA' },
+    ],
+  },
+  {
+    key: 'riley_coleman_transcript_strict',
+    label: 'Riley Transcript Strict Scalp',
+    summary: 'Uses transcript-mined rules: morning timing, trend and structure bias, key levels, breakout/retest confirmation, chop avoidance, and fixed R exits.',
+    risk: ['Requires intraday timestamps for the session filter', 'Strict gates can produce low trade counts', 'Treat as research until out-of-sample and paper results agree'],
+    params: [
+      { key: 'session_windows', label: 'Session windows', type: 'text' },
+      { key: 'zone_lookback', label: 'Zone lookback' },
+      { key: 'atr_period', label: 'ATR period' },
+      { key: 'volume_period', label: 'Volume period' },
+      { key: 'volume_mult', label: 'Breakout volume' },
+      { key: 'confirmation_volume_mult', label: 'Confirm volume' },
+      { key: 'ema_fast', label: 'Fast EMA' },
+      { key: 'ema_slow', label: 'Slow EMA' },
+      { key: 'min_trend_atr_mult', label: 'Min trend ATR' },
+      { key: 'chop_range_atr_mult', label: 'Chop range ATR' },
+      { key: 'breakout_atr_mult', label: 'Breakout ATR' },
+      { key: 'retest_atr_mult', label: 'Retest ATR' },
+      { key: 'min_body_atr_mult', label: 'Min body ATR' },
+      { key: 'retest_expiry_bars', label: 'Retest expiry', suffix: 'bars' },
+      { key: 'risk_reward', label: 'Risk/reward' },
+      { key: 'stop_atr_mult', label: 'Stop ATR mult' },
+      { key: 'max_hold_bars', label: 'Max hold', suffix: 'bars' },
+      { key: 'allow_failed_breakout', label: 'Failed breakouts', type: 'checkbox' },
+      { key: 'require_intraday_time', label: 'Require intraday time', type: 'checkbox' },
+    ],
+  },
+  {
+    key: 'futures_analytica_orderflow_spread',
+    label: 'Futures Analytica Order Flow Spread',
+    summary: 'Models L2/footprint pressure with imbalance, in-spread order aggression, spread quality, spoofing gates, and short-hold execution exits.',
+    risk: ['Best with real depth and footprint fields', 'OHLCV proxy mode is only a research fallback', 'Execution quality matters more than headline win rate'],
+    params: [
+      { key: 'depth_levels', label: 'Depth levels' },
+      { key: 'imbalance_threshold', label: 'Imbalance threshold' },
+      { key: 'microprob_threshold', label: 'Microprob threshold' },
+      { key: 'spoofing_max', label: 'Spoofing max' },
+      { key: 'spread_max_ticks', label: 'Max spread', suffix: 'ticks' },
+      { key: 'tick_size', label: 'Tick size' },
+      { key: 'large_order_mult', label: 'Large order mult' },
+      { key: 'saturation_z', label: 'Saturation z' },
+      { key: 'delta_threshold', label: 'Delta threshold' },
+      { key: 'risk_reward', label: 'Risk/reward' },
+      { key: 'stop_atr_mult', label: 'Stop ATR mult' },
+      { key: 'max_hold_bars', label: 'Max hold', suffix: 'bars' },
+      { key: 'require_in_spread_order', label: 'Require in-spread order', type: 'checkbox' },
+      { key: 'allow_ohlcv_proxy', label: 'Allow OHLCV proxy', type: 'checkbox' },
+    ],
+  },
 ];
 
 const defaultParams: Record<StrategyKey, BacktestForm['params']> = {
@@ -452,6 +526,59 @@ const defaultParams: Record<StrategyKey, BacktestForm['params']> = {
     volume_threshold: 2,
     delta_threshold: 0.5,
     lv_breakout_volume_mult: 1.5,
+  },
+  riley_coleman_reversal: {
+    zone_lookback: 50,
+    atr_period: 14,
+    atr_tolerance_mult: 0.35,
+    retest_tolerance: 0,
+    volume_mult: 1.05,
+    wick_ratio: 1.2,
+    risk_reward: 1.75,
+    stop_atr_mult: 1,
+    max_hold_bars: 20,
+    use_time_filter: true,
+    reversal_windows: '09:35-11:00,13:30-15:45',
+    enable_break_retest: true,
+    trend_filter: false,
+    trend_ema: 50,
+  },
+  riley_coleman_transcript_strict: {
+    session_windows: '09:35-11:15',
+    zone_lookback: 45,
+    atr_period: 14,
+    volume_period: 20,
+    volume_mult: 1.1,
+    confirmation_volume_mult: 1,
+    ema_fast: 9,
+    ema_slow: 21,
+    min_trend_atr_mult: 0.08,
+    chop_range_atr_mult: 2.2,
+    breakout_atr_mult: 0.12,
+    retest_atr_mult: 0.32,
+    min_body_atr_mult: 0.18,
+    retest_expiry_bars: 8,
+    risk_reward: 2,
+    stop_atr_mult: 0.9,
+    max_hold_bars: 14,
+    allow_failed_breakout: true,
+    require_intraday_time: true,
+  },
+  futures_analytica_orderflow_spread: {
+    depth_levels: 5,
+    imbalance_threshold: 0.5,
+    microprob_threshold: 0.8,
+    spoofing_max: 0.4,
+    spread_max_ticks: 4,
+    tick_size: 0.25,
+    large_order_mult: 2,
+    saturation_z: 1.2,
+    delta_threshold: 0.35,
+    risk_reward: 1.5,
+    stop_atr_mult: 0.8,
+    max_hold_bars: 12,
+    require_in_spread_order: false,
+    allow_ohlcv_proxy: true,
   },
 };
 
@@ -756,13 +883,13 @@ function App() {
     }));
   };
 
-  const updateParam = (param: string, value: string) => {
-    const parsed = value === '' ? '' : Number(value);
+  const updateParam = (param: string, value: string | boolean) => {
+    const parsed = typeof value === 'boolean' || value === '' ? value : Number(value);
     setFormData((previous) => ({
       ...previous,
       params: {
         ...previous.params,
-        [param]: Number.isNaN(parsed) ? value : parsed,
+        [param]: typeof parsed === 'number' && Number.isNaN(parsed) ? value : parsed,
       },
     }));
   };
@@ -1555,14 +1682,33 @@ function App() {
             <div className="parameter-grid">
               {selectedStrategy.params.map((param) => (
                 <Field label={param.label} key={param.key}>
-                  <div className="input-with-suffix">
+                  {param.type === 'checkbox' ? (
                     <input
-                      type="number"
+                      type="checkbox"
+                      checked={Boolean(formData.params[param.key])}
+                      onChange={(event) => updateParam(param.key, event.target.checked)}
+                    />
+                  ) : param.type === 'select' ? (
+                    <select
                       value={String(formData.params[param.key] ?? '')}
                       onChange={(event) => updateParam(param.key, event.target.value)}
-                    />
-                    {param.suffix && <span>{param.suffix}</span>}
-                  </div>
+                    >
+                      {(param.options ?? []).map((option) => (
+                        <option key={option} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="input-with-suffix">
+                      <input
+                        type={param.type === 'text' ? 'text' : 'number'}
+                        value={String(formData.params[param.key] ?? '')}
+                        onChange={(event) => updateParam(param.key, event.target.value)}
+                      />
+                      {param.suffix && <span>{param.suffix}</span>}
+                    </div>
+                  )}
                 </Field>
               ))}
 

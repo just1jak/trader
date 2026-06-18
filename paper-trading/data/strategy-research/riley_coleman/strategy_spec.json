@@ -1,0 +1,636 @@
+{
+  "ambiguities": [
+    "Discretionary chart drawing must be converted into fixed swing/zone definitions before backtesting.",
+    "Any mention of profitability or win rate must be ignored unless reproduced after costs in our data.",
+    "If transcripts emphasize order flow, Level 2/time-and-sales data is required; OHLCV proxies should be marked as lower confidence."
+  ],
+  "candidate_rules": [
+    {
+      "confidence": 0.982,
+      "description": "Define stop, target, and risk/reward before entry.",
+      "evidence_count": 3704,
+      "mechanical_translation": "Attach bracket orders with ATR/structure stop, fixed R multiple target, max hold bars, and no-entry if reward is too small.",
+      "rule_id": "fixed_risk_reward_management",
+      "type": "risk",
+      "video_coverage": 78
+    },
+    {
+      "confidence": 0.974,
+      "description": "Prefer specific futures/scalping windows instead of trading every minute of the session.",
+      "evidence_count": 4070,
+      "mechanical_translation": "Restrict entries to configured session windows and reject low-liquidity chop periods.",
+      "rule_id": "session_timing_filter",
+      "type": "filter",
+      "video_coverage": 77
+    },
+    {
+      "confidence": 0.965,
+      "description": "Use market structure, trend, channel, or directional bias to avoid fighting the dominant move.",
+      "evidence_count": 6478,
+      "mechanical_translation": "Add a trend filter based on swing structure, EMA slope, higher highs/lows, or channel direction.",
+      "rule_id": "use_market_structure_bias",
+      "type": "filter",
+      "video_coverage": 76
+    },
+    {
+      "confidence": 0.965,
+      "description": "Only look for trades at pre-identified support, resistance, structure, liquidity, or supply/demand zones.",
+      "evidence_count": 6308,
+      "mechanical_translation": "Build rolling support/resistance zones from prior swing highs/lows; ignore signals that occur away from those zones.",
+      "rule_id": "trade_from_key_zones",
+      "type": "context",
+      "video_coverage": 76
+    },
+    {
+      "confidence": 0.956,
+      "description": "Avoid trades during unclear, choppy, or news-driven conditions.",
+      "evidence_count": 2305,
+      "mechanical_translation": "Add no-trade filters for low range/volume chop, major scheduled events, and setups without clean invalidation.",
+      "rule_id": "avoid_bad_context",
+      "type": "risk",
+      "video_coverage": 75
+    },
+    {
+      "confidence": 0.851,
+      "description": "Wait for price rejection or confirmation before entering instead of buying/selling the first touch.",
+      "evidence_count": 1683,
+      "mechanical_translation": "Require a rejection candle, wick rejection, engulfing candle, close back through the level, or volume confirmation after a zone test.",
+      "rule_id": "wait_for_rejection_confirmation",
+      "type": "entry",
+      "video_coverage": 63
+    },
+    {
+      "confidence": 0.843,
+      "description": "Treat break-and-retest behavior as a separate setup from pure reversal entries.",
+      "evidence_count": 986,
+      "mechanical_translation": "After a level breaks with momentum, mark it as pending and enter only if price retests that level within a fixed bar window.",
+      "rule_id": "break_and_retest",
+      "type": "entry",
+      "video_coverage": 62
+    }
+  ],
+  "generated_at": "2026-06-17T12:40:41.649279+00:00",
+  "source_count": 80,
+  "sources": [
+    {
+      "segments": 1460,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/-Iw-nCNAlTg/-Iw-nCNAlTg.en-orig.vtt",
+      "title": "How To Trade Futures For Beginners (Full Guide)",
+      "url": "https://www.youtube.com/watch?v=-Iw-nCNAlTg",
+      "video_id": "-Iw-nCNAlTg"
+    },
+    {
+      "segments": 462,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/-edI0gXN918/-edI0gXN918.en-orig.vtt",
+      "title": "LIVE TRADING FUTURES Losing $805 (This Was Rough...)",
+      "url": "https://www.youtube.com/watch?v=-edI0gXN918",
+      "video_id": "-edI0gXN918"
+    },
+    {
+      "segments": 1110,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/-xuQXmQWMCk/-xuQXmQWMCk.en-orig.vtt",
+      "title": "The Strategy I'd Use To Flip $4 Into $100,000",
+      "url": "https://www.youtube.com/watch?v=-xuQXmQWMCk",
+      "video_id": "-xuQXmQWMCk"
+    },
+    {
+      "segments": 740,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/0XoYhKlBEVs/0XoYhKlBEVs.en-orig.vtt",
+      "title": "I Tried Making $33,000 in 33 Days Trading Futures",
+      "url": "https://www.youtube.com/watch?v=0XoYhKlBEVs",
+      "video_id": "0XoYhKlBEVs"
+    },
+    {
+      "segments": 774,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/2LnFWQ10-0E/2LnFWQ10-0E.en-orig.vtt",
+      "title": "Complete Futures Trading Strategy For Beginners",
+      "url": "https://www.youtube.com/watch?v=2LnFWQ10-0E",
+      "video_id": "2LnFWQ10-0E"
+    },
+    {
+      "segments": 402,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/2Qz0hZfW6Ck/2Qz0hZfW6Ck.en-orig.vtt",
+      "title": "1 Minute Scalping Strategy (Only Takes 60 Minutes a Day)",
+      "url": "https://www.youtube.com/watch?v=2Qz0hZfW6Ck",
+      "video_id": "2Qz0hZfW6Ck"
+    },
+    {
+      "segments": 794,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/4iUI3Wch-So/4iUI3Wch-So.en-orig.vtt",
+      "title": "How I Made $5,008 Scalping (1 Minute)",
+      "url": "https://www.youtube.com/watch?v=4iUI3Wch-So",
+      "video_id": "4iUI3Wch-So"
+    },
+    {
+      "segments": 1776,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/50nvqqkc0ro/50nvqqkc0ro.en-orig.vtt",
+      "title": "FASTEST Way To Grow a Small Account Day Trading 2026",
+      "url": "https://www.youtube.com/watch?v=50nvqqkc0ro",
+      "video_id": "50nvqqkc0ro"
+    },
+    {
+      "segments": 3364,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/5VJSNB7Fi1Y/5VJSNB7Fi1Y.en-orig.vtt",
+      "title": "I Taught Him Every Dark Secret of Day Trading",
+      "url": "https://www.youtube.com/watch?v=5VJSNB7Fi1Y",
+      "video_id": "5VJSNB7Fi1Y"
+    },
+    {
+      "segments": 1650,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/5Y7XCkXf7fk/5Y7XCkXf7fk.en-orig.vtt",
+      "title": "How To Read Futures Charts (With ZERO Experience)",
+      "url": "https://www.youtube.com/watch?v=5Y7XCkXf7fk",
+      "video_id": "5Y7XCkXf7fk"
+    },
+    {
+      "segments": 914,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/6AS3vgzALBQ/6AS3vgzALBQ.en-orig.vtt",
+      "title": "Scalping Was Impossible, Until I Learned This Secret",
+      "url": "https://www.youtube.com/watch?v=6AS3vgzALBQ",
+      "video_id": "6AS3vgzALBQ"
+    },
+    {
+      "segments": 1230,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/6txf-h3PENY/6txf-h3PENY.en-orig.vtt",
+      "title": "I Tried Making $1,000 a Day",
+      "url": "https://www.youtube.com/watch?v=6txf-h3PENY",
+      "video_id": "6txf-h3PENY"
+    },
+    {
+      "segments": 792,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/8w50dngJoYc/8w50dngJoYc.en-orig.vtt",
+      "title": "How I Made $3,525 Scalping (1 Minute)",
+      "url": "https://www.youtube.com/watch?v=8w50dngJoYc",
+      "video_id": "8w50dngJoYc"
+    },
+    {
+      "segments": 330,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/9JqV9iziPYA/9JqV9iziPYA.en-orig.vtt",
+      "title": "$683 in 6 Minutes Live Trading Futures",
+      "url": "https://www.youtube.com/watch?v=9JqV9iziPYA",
+      "video_id": "9JqV9iziPYA"
+    },
+    {
+      "segments": 930,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/9L3YOTLRY44/9L3YOTLRY44.en-orig.vtt",
+      "title": "Ninjatrader Web Platform Tutorial - Setup + Tricks",
+      "url": "https://www.youtube.com/watch?v=9L3YOTLRY44",
+      "video_id": "9L3YOTLRY44"
+    },
+    {
+      "segments": 978,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/9SQGjo3PUhA/9SQGjo3PUhA.en-orig.vtt",
+      "title": "I Do This Every Morning to Make Easy Money ($250/day)",
+      "url": "https://www.youtube.com/watch?v=9SQGjo3PUhA",
+      "video_id": "9SQGjo3PUhA"
+    },
+    {
+      "segments": 1142,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/9ohFSjuJIqE/9ohFSjuJIqE.en-orig.vtt",
+      "title": "If I Started Over, This Is How I'd Make $250/Day Trading",
+      "url": "https://www.youtube.com/watch?v=9ohFSjuJIqE",
+      "video_id": "9ohFSjuJIqE"
+    },
+    {
+      "segments": 3590,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/Azo_h9cUREs/Azo_h9cUREs.en-orig.vtt",
+      "title": "Teaching My Brother To Make Money Before Work Every Day",
+      "url": "https://www.youtube.com/watch?v=Azo_h9cUREs",
+      "video_id": "Azo_h9cUREs"
+    },
+    {
+      "segments": 774,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/B9MLoxSCUSQ/B9MLoxSCUSQ.en-orig.vtt",
+      "title": "LIVE DAY TRADING Making $1,265 (back from my wedding!)",
+      "url": "https://www.youtube.com/watch?v=B9MLoxSCUSQ",
+      "video_id": "B9MLoxSCUSQ"
+    },
+    {
+      "segments": 490,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/C2xUbOTPFe4/C2xUbOTPFe4.en-orig.vtt",
+      "title": "LIVE DAY TRADING Gold Making $2,055 in 90 Minutes",
+      "url": "https://www.youtube.com/watch?v=C2xUbOTPFe4",
+      "video_id": "C2xUbOTPFe4"
+    },
+    {
+      "segments": 690,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/C7UHiQ8_6Q0/C7UHiQ8_6Q0.en-orig.vtt",
+      "title": "I Turned $50 Into $3,754 In 21 Days Trading Futures",
+      "url": "https://www.youtube.com/watch?v=C7UHiQ8_6Q0",
+      "video_id": "C7UHiQ8_6Q0"
+    },
+    {
+      "segments": 472,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/Cej3Ub_cnPw/Cej3Ub_cnPw.en-orig.vtt",
+      "title": "I Found The EASIEST Way To Become Profitable!",
+      "url": "https://www.youtube.com/watch?v=Cej3Ub_cnPw",
+      "video_id": "Cej3Ub_cnPw"
+    },
+    {
+      "segments": 1106,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/D_-_X0KYP-I/D_-_X0KYP-I.en-orig.vtt",
+      "title": "I Tried Trading Futures With Only $4",
+      "url": "https://www.youtube.com/watch?v=D_-_X0KYP-I",
+      "video_id": "D_-_X0KYP-I"
+    },
+    {
+      "segments": 270,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/Dh5KFZqEHqU/Dh5KFZqEHqU.en-orig.vtt",
+      "title": "Futures Trading Explained For Beginners in 5 Minutes",
+      "url": "https://www.youtube.com/watch?v=Dh5KFZqEHqU",
+      "video_id": "Dh5KFZqEHqU"
+    },
+    {
+      "segments": 1670,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/E4oO5izqA1M/E4oO5izqA1M.en-orig.vtt",
+      "title": "The Knowledge I'd Use To Turn $4 Into $100k",
+      "url": "https://www.youtube.com/watch?v=E4oO5izqA1M",
+      "video_id": "E4oO5izqA1M"
+    },
+    {
+      "segments": 1982,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/F19I3VFWMxw/F19I3VFWMxw.en-orig.vtt",
+      "title": "The #1 Scalping Strategy Beginners Miss Out On",
+      "url": "https://www.youtube.com/watch?v=F19I3VFWMxw",
+      "video_id": "F19I3VFWMxw"
+    },
+    {
+      "segments": 1116,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/FWA9KiBw3aU/FWA9KiBw3aU.en-orig.vtt",
+      "title": "LIVE TRADING - $1,200 Proifts In REALITY",
+      "url": "https://www.youtube.com/watch?v=FWA9KiBw3aU",
+      "video_id": "FWA9KiBw3aU"
+    },
+    {
+      "segments": 664,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/IL8_w96iCfk/IL8_w96iCfk.en-orig.vtt",
+      "title": "I Found The Secret To Fair Value Gaps",
+      "url": "https://www.youtube.com/watch?v=IL8_w96iCfk",
+      "video_id": "IL8_w96iCfk"
+    },
+    {
+      "segments": 660,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/JXWAJudB3zo/JXWAJudB3zo.en-orig.vtt",
+      "title": "LIVE DAY TRADING Making $725 (This Market Sucks)",
+      "url": "https://www.youtube.com/watch?v=JXWAJudB3zo",
+      "video_id": "JXWAJudB3zo"
+    },
+    {
+      "segments": 1158,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/Jk4JJ4-dCuo/Jk4JJ4-dCuo.en-orig.vtt",
+      "title": "How To Start Day Trading With ZERO Experience",
+      "url": "https://www.youtube.com/watch?v=Jk4JJ4-dCuo",
+      "video_id": "Jk4JJ4-dCuo"
+    },
+    {
+      "segments": 506,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/K2vxN3uZjMg/K2vxN3uZjMg.en-orig.vtt",
+      "title": "LIVE DAY TRADING Making $4,577 in 15 Minutes",
+      "url": "https://www.youtube.com/watch?v=K2vxN3uZjMg",
+      "video_id": "K2vxN3uZjMg"
+    },
+    {
+      "segments": 7402,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/Kdqi70RP7PM/Kdqi70RP7PM.en-orig.vtt",
+      "title": "How To Start Day Trading Futures As A Beginner In 2026 (3 Hours)",
+      "url": "https://www.youtube.com/watch?v=Kdqi70RP7PM",
+      "video_id": "Kdqi70RP7PM"
+    },
+    {
+      "segments": 776,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/Kklexhad2tM/Kklexhad2tM.en-orig.vtt",
+      "title": "Scalping Became SO EASY After I Did This!",
+      "url": "https://www.youtube.com/watch?v=Kklexhad2tM",
+      "video_id": "Kklexhad2tM"
+    },
+    {
+      "segments": 2254,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/KrM4CS4_ZtI/KrM4CS4_ZtI.en-orig.vtt",
+      "title": "Scalping Trading For Beginners (Full Course)",
+      "url": "https://www.youtube.com/watch?v=KrM4CS4_ZtI",
+      "video_id": "KrM4CS4_ZtI"
+    },
+    {
+      "segments": 544,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/LdBDYaYgwAA/LdBDYaYgwAA.en-orig.vtt",
+      "title": "Live Day Trading Losing $3,180 (These Setups Seemed Perfect!!)",
+      "url": "https://www.youtube.com/watch?v=LdBDYaYgwAA",
+      "video_id": "LdBDYaYgwAA"
+    },
+    {
+      "segments": 702,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/NcWVdKkIMbM/NcWVdKkIMbM.en-orig.vtt",
+      "title": "The BEST 1 Minute Scalping Strategy EVER (Simple & Proven)",
+      "url": "https://www.youtube.com/watch?v=NcWVdKkIMbM",
+      "video_id": "NcWVdKkIMbM"
+    },
+    {
+      "segments": 658,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/Nhe6GqJnOmY/Nhe6GqJnOmY.en-orig.vtt",
+      "title": "These indicators Made Me $5k In 20 Days",
+      "url": "https://www.youtube.com/watch?v=Nhe6GqJnOmY",
+      "video_id": "Nhe6GqJnOmY"
+    },
+    {
+      "segments": 764,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/O2vSgvIB_Os/O2vSgvIB_Os.en-orig.vtt",
+      "title": "How To Grow A Small Trading Account Fast (Proven Wins)",
+      "url": "https://www.youtube.com/watch?v=O2vSgvIB_Os",
+      "video_id": "O2vSgvIB_Os"
+    },
+    {
+      "segments": 1386,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/Ogj1tFEXDQ8/Ogj1tFEXDQ8.en-orig.vtt",
+      "title": "Master the Support & Resistance Strategy: ALL YOU NEED TO KNOW!",
+      "url": "https://www.youtube.com/watch?v=Ogj1tFEXDQ8",
+      "video_id": "Ogj1tFEXDQ8"
+    },
+    {
+      "segments": 414,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/QuTXaErpKxY/QuTXaErpKxY.en-orig.vtt",
+      "title": "The Best Trading Platforms In 2025 (Crypto, Futures, Options, Forex)",
+      "url": "https://www.youtube.com/watch?v=QuTXaErpKxY",
+      "video_id": "QuTXaErpKxY"
+    },
+    {
+      "segments": 786,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/V_NmNLoBBg8/V_NmNLoBBg8.en-orig.vtt",
+      "title": "The Small Account Strategy I Wish I Knew As a Beginner",
+      "url": "https://www.youtube.com/watch?v=V_NmNLoBBg8",
+      "video_id": "V_NmNLoBBg8"
+    },
+    {
+      "segments": 1334,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/X2WcL536WYQ/X2WcL536WYQ.en-orig.vtt",
+      "title": "How To Day Trade Using Only $4",
+      "url": "https://www.youtube.com/watch?v=X2WcL536WYQ",
+      "video_id": "X2WcL536WYQ"
+    },
+    {
+      "segments": 776,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/XyDAIH23vbU/XyDAIH23vbU.en-orig.vtt",
+      "title": "Live Day Trading Making $1,124 (When to Half Size)",
+      "url": "https://www.youtube.com/watch?v=XyDAIH23vbU",
+      "video_id": "XyDAIH23vbU"
+    },
+    {
+      "segments": 4900,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/YKhDPG-eP9k/YKhDPG-eP9k.en-orig.vtt",
+      "title": "Teaching My Brother to Day Trade With Only $4",
+      "url": "https://www.youtube.com/watch?v=YKhDPG-eP9k",
+      "video_id": "YKhDPG-eP9k"
+    },
+    {
+      "segments": 1006,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/ZAbmyeR1edg/ZAbmyeR1edg.en-orig.vtt",
+      "title": "How I Made $2,975 Scalping (1 Minute)",
+      "url": "https://www.youtube.com/watch?v=ZAbmyeR1edg",
+      "video_id": "ZAbmyeR1edg"
+    },
+    {
+      "segments": 1318,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/ZESFZnn6mdU/ZESFZnn6mdU.en-orig.vtt",
+      "title": "I Found The FASTEST Way to Become Profitable",
+      "url": "https://www.youtube.com/watch?v=ZESFZnn6mdU",
+      "video_id": "ZESFZnn6mdU"
+    },
+    {
+      "segments": 14736,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/ZTs37L0KBaI/ZTs37L0KBaI.en-orig.vtt",
+      "title": "I Taught Him How To Flip $4 Into $2,659",
+      "url": "https://www.youtube.com/watch?v=ZTs37L0KBaI",
+      "video_id": "ZTs37L0KBaI"
+    },
+    {
+      "segments": 1546,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/ZUZcjU0OTV4/ZUZcjU0OTV4.en-orig.vtt",
+      "title": "If You Only Have $4, Do This Every Morning",
+      "url": "https://www.youtube.com/watch?v=ZUZcjU0OTV4",
+      "video_id": "ZUZcjU0OTV4"
+    },
+    {
+      "segments": 9274,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/ZWRc1-zt3yw/ZWRc1-zt3yw.en-orig.vtt",
+      "title": "Beginners Guide to Day Trading in 2026 (3+ Hours)",
+      "url": "https://www.youtube.com/watch?v=ZWRc1-zt3yw",
+      "video_id": "ZWRc1-zt3yw"
+    },
+    {
+      "segments": 712,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/Zek-nMvv9-w/Zek-nMvv9-w.en-orig.vtt",
+      "title": "The FASTEST Way To Grow A Small Trading Account",
+      "url": "https://www.youtube.com/watch?v=Zek-nMvv9-w",
+      "video_id": "Zek-nMvv9-w"
+    },
+    {
+      "segments": 920,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/ZuWZ_8No1KI/ZuWZ_8No1KI.en-orig.vtt",
+      "title": "How I Turned $50 into $3,754 Using Only Candlesticks",
+      "url": "https://www.youtube.com/watch?v=ZuWZ_8No1KI",
+      "video_id": "ZuWZ_8No1KI"
+    },
+    {
+      "segments": 498,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/_6qvvUSvBJ8/_6qvvUSvBJ8.en-orig.vtt",
+      "title": "How I Made $4,477 Day Trading",
+      "url": "https://www.youtube.com/watch?v=_6qvvUSvBJ8",
+      "video_id": "_6qvvUSvBJ8"
+    },
+    {
+      "segments": 340,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/bK_wxh3ospg/bK_wxh3ospg.en-orig.vtt",
+      "title": "LIVE DAY TRADING Gold Losing $3,480 (Breaking my rules)",
+      "url": "https://www.youtube.com/watch?v=bK_wxh3ospg",
+      "video_id": "bK_wxh3ospg"
+    },
+    {
+      "segments": 1740,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/bj41iX5B_ho/bj41iX5B_ho.en-orig.vtt",
+      "title": "STOP Learning COMPLEX Trading Patterns - These Are All You Need",
+      "url": "https://www.youtube.com/watch?v=bj41iX5B_ho",
+      "video_id": "bj41iX5B_ho"
+    },
+    {
+      "segments": 466,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/cJabulGgK9Q/cJabulGgK9Q.en-orig.vtt",
+      "title": "This Scalping Strategy Is Boring, But It Works",
+      "url": "https://www.youtube.com/watch?v=cJabulGgK9Q",
+      "video_id": "cJabulGgK9Q"
+    },
+    {
+      "segments": 832,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/ci7etpLCaFc/ci7etpLCaFc.en-orig.vtt",
+      "title": "I Stopped Doing This, Now I Make $1,000s/Day",
+      "url": "https://www.youtube.com/watch?v=ci7etpLCaFc",
+      "video_id": "ci7etpLCaFc"
+    },
+    {
+      "segments": 158,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/d8bhm1wj64U/d8bhm1wj64U.en-orig.vtt",
+      "title": "Learn The Best Scalping Strategy in 3 Minutes",
+      "url": "https://www.youtube.com/watch?v=d8bhm1wj64U",
+      "video_id": "d8bhm1wj64U"
+    },
+    {
+      "segments": 1944,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/ekGtd7Vn6Os/ekGtd7Vn6Os.en-orig.vtt",
+      "title": "This Scalping Strategy Will Dominate Trading in 2026",
+      "url": "https://www.youtube.com/watch?v=ekGtd7Vn6Os",
+      "video_id": "ekGtd7Vn6Os"
+    },
+    {
+      "segments": 850,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/epKUdZGuiiQ/epKUdZGuiiQ.en-orig.vtt",
+      "title": "How I Lost $3,375 Scalping",
+      "url": "https://www.youtube.com/watch?v=epKUdZGuiiQ",
+      "video_id": "epKUdZGuiiQ"
+    },
+    {
+      "segments": 2832,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/eq6269SK5cE/eq6269SK5cE.en-orig.vtt",
+      "title": "Master Class: 1 Minute Scalping Strategy (Beginner to Advanced)",
+      "url": "https://www.youtube.com/watch?v=eq6269SK5cE",
+      "video_id": "eq6269SK5cE"
+    },
+    {
+      "segments": 868,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/fZ-5PfoW4Dk/fZ-5PfoW4Dk.en-orig.vtt",
+      "title": "The NEW Scalping Pattern That Made Me $4000 in 20 Minutes!",
+      "url": "https://www.youtube.com/watch?v=fZ-5PfoW4Dk",
+      "video_id": "fZ-5PfoW4Dk"
+    },
+    {
+      "segments": 454,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/ghqBHK4PdIA/ghqBHK4PdIA.en-orig.vtt",
+      "title": "How I Lost $908 Scalping In 1 Minute",
+      "url": "https://www.youtube.com/watch?v=ghqBHK4PdIA",
+      "video_id": "ghqBHK4PdIA"
+    },
+    {
+      "segments": 770,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/h41b8fNGihU/h41b8fNGihU.en-orig.vtt",
+      "title": "I Do This Every Day Before Work To Earn $250",
+      "url": "https://www.youtube.com/watch?v=h41b8fNGihU",
+      "video_id": "h41b8fNGihU"
+    },
+    {
+      "segments": 1164,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/hQj81HFxcsw/hQj81HFxcsw.en-orig.vtt",
+      "title": "The NEW Way to Grow Trading Accounts (Changes Everything)",
+      "url": "https://www.youtube.com/watch?v=hQj81HFxcsw",
+      "video_id": "hQj81HFxcsw"
+    },
+    {
+      "segments": 527,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/hU6I1iscP9o/hU6I1iscP9o.en-orig.vtt",
+      "title": "My 1 Minute Sniper Strategy Makes $6,307/mo (Real Results)",
+      "url": "https://www.youtube.com/watch?v=hU6I1iscP9o",
+      "video_id": "hU6I1iscP9o"
+    },
+    {
+      "segments": 504,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/hfUXdW-cTVc/hfUXdW-cTVc.en-orig.vtt",
+      "title": "Live Day Trading Making $2,800 (Had to Lock The F*ck in)",
+      "url": "https://www.youtube.com/watch?v=hfUXdW-cTVc",
+      "video_id": "hfUXdW-cTVc"
+    },
+    {
+      "segments": 648,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/hu8apzTjB4g/hu8apzTjB4g.en-orig.vtt",
+      "title": "I Do This Every Morning to Earn $250 per Day.",
+      "url": "https://www.youtube.com/watch?v=hu8apzTjB4g",
+      "video_id": "hu8apzTjB4g"
+    },
+    {
+      "segments": 1034,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/hv7jYJRNqx4/hv7jYJRNqx4.en-orig.vtt",
+      "title": "This Will 3X Your Trading",
+      "url": "https://www.youtube.com/watch?v=hv7jYJRNqx4",
+      "video_id": "hv7jYJRNqx4"
+    },
+    {
+      "segments": 316,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/iDbarpY-2rg/iDbarpY-2rg.en-orig.vtt",
+      "title": "Day in The Life Of A Day Trading Youtuber",
+      "url": "https://www.youtube.com/watch?v=iDbarpY-2rg",
+      "video_id": "iDbarpY-2rg"
+    },
+    {
+      "segments": 3028,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/ihXGBo83UeM/ihXGBo83UeM.en-orig.vtt",
+      "title": "Steal This Easy 1 Minute Scalping Strategy",
+      "url": "https://www.youtube.com/watch?v=ihXGBo83UeM",
+      "video_id": "ihXGBo83UeM"
+    },
+    {
+      "segments": 1622,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/lTzyt8bOZuI/lTzyt8bOZuI.en-orig.vtt",
+      "title": "A Complete Ninjatrader Tutorial in 30 Minutes",
+      "url": "https://www.youtube.com/watch?v=lTzyt8bOZuI",
+      "video_id": "lTzyt8bOZuI"
+    },
+    {
+      "segments": 4881,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/lxuwD-O5tbU/lxuwD-O5tbU.en-orig.vtt",
+      "title": "I Found The Fastest Way to Profitability in 2026",
+      "url": "https://www.youtube.com/watch?v=lxuwD-O5tbU",
+      "video_id": "lxuwD-O5tbU"
+    },
+    {
+      "segments": 1222,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/nMBiubdivmA/nMBiubdivmA.en-orig.vtt",
+      "title": "The Best Supply & Demand Strategy For Beginners 2026",
+      "url": "https://www.youtube.com/watch?v=nMBiubdivmA",
+      "video_id": "nMBiubdivmA"
+    },
+    {
+      "segments": 3120,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/oDK0hbAMWbU/oDK0hbAMWbU.en-orig.vtt",
+      "title": "I Turned $50 Into $21,873 In 10 Trades",
+      "url": "https://www.youtube.com/watch?v=oDK0hbAMWbU",
+      "video_id": "oDK0hbAMWbU"
+    },
+    {
+      "segments": 1312,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/pwwvAoClof8/pwwvAoClof8.en-orig.vtt",
+      "title": "The NEW Way to Trade Candlesticks (Full Course)",
+      "url": "https://www.youtube.com/watch?v=pwwvAoClof8",
+      "video_id": "pwwvAoClof8"
+    },
+    {
+      "segments": 392,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/q3zJd1Ti5ds/q3zJd1Ti5ds.en-orig.vtt",
+      "title": "The 7 Levels of Traders",
+      "url": "https://www.youtube.com/watch?v=q3zJd1Ti5ds",
+      "video_id": "q3zJd1Ti5ds"
+    },
+    {
+      "segments": 8722,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/u11tIO9AdP4/u11tIO9AdP4.en-orig.vtt",
+      "title": "How to Start Day Trading As A Beginner [2025 Full Guide]",
+      "url": "https://www.youtube.com/watch?v=u11tIO9AdP4",
+      "video_id": "u11tIO9AdP4"
+    },
+    {
+      "segments": 524,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/xIkuat_muz4/xIkuat_muz4.en-orig.vtt",
+      "title": "I Started With $4, Now I Make $500/Day",
+      "url": "https://www.youtube.com/watch?v=xIkuat_muz4",
+      "video_id": "xIkuat_muz4"
+    },
+    {
+      "segments": 1178,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/xh8h4dQPxBY/xh8h4dQPxBY.en-orig.vtt",
+      "title": "How To Start Day Trading As A Beginner In 2026",
+      "url": "https://www.youtube.com/watch?v=xh8h4dQPxBY",
+      "video_id": "xh8h4dQPxBY"
+    },
+    {
+      "segments": 792,
+      "source_file": "paper-trading/data/transcripts/riley_coleman/zjvAYz7f374/zjvAYz7f374.en-orig.vtt",
+      "title": "Become a Day Trader in 3 Days",
+      "url": "https://www.youtube.com/watch?v=zjvAYz7f374",
+      "video_id": "zjvAYz7f374"
+    }
+  ]
+}

@@ -45,6 +45,9 @@ STRATEGIES = {
     'ema_scalp': 'Micro-Trend EMA Scalp',
     'support_resistance_flip': 'Support/Resistance Flip',
     'volume_profile_orderflow': 'Volume Profile Order Flow',
+    'riley_coleman_reversal': 'Riley Coleman Reversal Scalp',
+    'riley_coleman_transcript_strict': 'Riley Transcript Strict Scalp',
+    'futures_analytica_orderflow_spread': 'Futures Analytica Order Flow Spread',
 }
 
 backtest_input = api.model('BacktestInput', {
