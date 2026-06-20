@@ -359,6 +359,24 @@ type CongressResult = {
   message: string;
 };
 
+type CongressSweepRow = {
+  rank: number;
+  score: number;
+  qualified: boolean;
+  rules: Record<string, unknown>;
+  metrics: Record<string, number>;
+  message: string;
+};
+
+type CongressSweepResult = {
+  ranked: CongressSweepRow[];
+  best?: CongressSweepRow | null;
+  evaluated: number;
+  total_combinations: number;
+  capped?: boolean;
+  message: string;
+};
+
 type CongressIngestSummary = {
   status: string;
   year: number;
@@ -827,8 +845,10 @@ function App() {
   });
   const [congressTrades, setCongressTrades] = useState<CongressTrade[]>([]);
   const [congressResult, setCongressResult] = useState<CongressResult | null>(null);
+  const [congressSweep, setCongressSweep] = useState<CongressSweepResult | null>(null);
   const [congressIngestResult, setCongressIngestResult] = useState<CongressIngestSummary | null>(null);
   const [congressSyncing, setCongressSyncing] = useState(false);
+  const [congressSweeping, setCongressSweeping] = useState(false);
   const [chartRange, setChartRange] = useState('All');
   const [tradeFilter, setTradeFilter] = useState<TradeFilter>('all');
   const [lastAction, setLastAction] = useState('Waiting for first backend run');
@@ -1491,6 +1511,10 @@ function App() {
   };
 
   const runCongressBacktest = async () => {
+    const tickers = congressForm.tickers
+      .split(',')
+      .map((ticker) => ticker.trim().toUpperCase())
+      .filter(Boolean);
     const data = await callApi<CongressResult>('/api/v1/congress/backtest', {
       method: 'POST',
       body: JSON.stringify({
@@ -1501,16 +1525,46 @@ function App() {
         max_trades: Number(congressForm.maxTrades || 250),
         min_amount: congressForm.minAmount ? Number(congressForm.minAmount) : undefined,
         chambers: congressForm.chamber === 'all' ? [] : [congressForm.chamber],
-        tickers: congressForm.tickers
-          .split(',')
-          .map((ticker) => ticker.trim().toUpperCase())
-          .filter(Boolean),
+        tickers,
         source: 'yahoo',
       }),
     });
     if (data?.metrics) {
       setCongressResult(data);
       setLastAction(`Congressional disclosure replay checked ${data.metrics.total_trades ?? 0} trades`);
+    }
+  };
+
+  const runCongressSweep = async () => {
+    const tickers = congressForm.tickers
+      .split(',')
+      .map((ticker) => ticker.trim().toUpperCase())
+      .filter(Boolean);
+    setCongressSweeping(true);
+    try {
+      const data = await callApi<CongressSweepResult>('/api/v1/congress/sweep', {
+        method: 'POST',
+        body: JSON.stringify({
+          holding_days: [3, 5, 10, 20, 30],
+          entry_basis: ['filing_date', 'transaction_date'],
+          purchase_actions: ['long', 'ignore'],
+          sale_actions: ['short', 'ignore'],
+          max_trades: Number(congressForm.maxTrades || 250),
+          min_completed_trades: 5,
+          top_n: 8,
+          max_combinations: 120,
+          min_amounts: congressForm.minAmount ? [Number(congressForm.minAmount)] : undefined,
+          chambers: congressForm.chamber === 'all' ? undefined : [congressForm.chamber],
+          tickers,
+          source: 'yahoo',
+        }),
+      });
+      if (data?.ranked) {
+        setCongressSweep(data);
+        setLastAction(`Congressional sweep evaluated ${data.evaluated} rule sets`);
+      }
+    } finally {
+      setCongressSweeping(false);
     }
   };
 
@@ -2726,6 +2780,10 @@ function ModulePanel({
                 <PlayIcon />
                 Run congress replay
               </button>
+              <button className="reset-button" type="button" onClick={runCongressSweep} disabled={congressSweeping}>
+                <PlayIcon />
+                {congressSweeping ? 'Sweeping' : 'Sweep congress rules'}
+              </button>
               <p>{congressResult?.message ?? 'Uses House/Senate disclosures from the local SQLite database.'}</p>
             </article>
 
@@ -2743,6 +2801,30 @@ function ModulePanel({
                 </ul>
               ) : (
                 <p>No congressional replay has been run in this session yet.</p>
+              )}
+            </article>
+
+            <article className="module-card is-wide">
+              <h3>Rule sweep</h3>
+              {congressSweep?.ranked?.length ? (
+                <ul>
+                  {congressSweep.ranked.slice(0, 8).map((row) => {
+                    const rules = row.rules ?? {};
+                    const metrics = row.metrics ?? {};
+                    return (
+                      <li key={`${row.rank}-${String(rules.entry_basis)}-${String(rules.holding_days)}-${String(rules.purchase_action)}-${String(rules.sale_action)}-${String(rules.chambers)}`}>
+                        <span>
+                          #{row.rank} · {String(rules.entry_basis)} · {String(rules.holding_days)}d · buy {String(rules.purchase_action)} · sell {String(rules.sale_action)}
+                        </span>
+                        <strong>
+                          {toPercent(metrics.compounded_return)} · {toPercent(metrics.win_rate)} win · {String(metrics.total_trades ?? 0)} trades
+                        </strong>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p>No congressional rule sweep has been run in this session yet.</p>
               )}
             </article>
 

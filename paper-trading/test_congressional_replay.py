@@ -124,6 +124,34 @@ def test_congressional_replay_can_ignore_sales():
     assert result["trade_details"][0]["ticker"] == "AAPL"
 
 
+def test_congressional_sweep_ranks_rule_candidates():
+    original_db = congressional.DB_PATH
+    original_fetch = congressional.fetch_market_data
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db_path = Path(temp_dir) / "congress.db"
+        make_test_db(db_path)
+        congressional.DB_PATH = db_path
+        congressional.fetch_market_data = fake_market_data
+        result = congressional.sweep_congressional_backtests(
+            holding_days=[5],
+            entry_basis=["filing_date"],
+            purchase_actions=["long", "ignore"],
+            sale_actions=["short", "ignore"],
+            chamber_groups=[[]],
+            max_trades=10,
+            min_completed_trades=1,
+            top_n=3,
+        )
+    congressional.DB_PATH = original_db
+    congressional.fetch_market_data = original_fetch
+
+    assert result["evaluated"] == 3
+    assert result["best"]["rules"]["purchase_action"] == "long"
+    assert result["best"]["rules"]["sale_action"] == "short"
+    assert result["best"]["metrics"]["total_trades"] == 2
+    assert round(result["best"]["metrics"]["total_return"], 6) == 0.2
+
+
 def test_ingest_window_and_limit_helpers():
     ingest = load_ingest_module()
 
@@ -169,6 +197,7 @@ def test_house_datadawn_insert_and_pdf_stock_filter():
 if __name__ == "__main__":
     test_congressional_replay_buy_sell_rules()
     test_congressional_replay_can_ignore_sales()
+    test_congressional_sweep_ranks_rule_candidates()
     test_ingest_window_and_limit_helpers()
     test_house_datadawn_insert_and_pdf_stock_filter()
     print("Congressional replay tests passed")

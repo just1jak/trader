@@ -13,6 +13,11 @@ DB_PATH = PROJECT_ROOT / 'congressional-trading' / 'congress_trades.db'
 
 VALID_ACTIONS = {'long', 'short', 'ignore'}
 VALID_ENTRY_BASIS = {'filing_date', 'transaction_date'}
+DEFAULT_SWEEP_HOLDING_DAYS = [1, 3, 5, 10, 20, 30]
+DEFAULT_SWEEP_ENTRY_BASIS = ['filing_date', 'transaction_date']
+DEFAULT_SWEEP_PURCHASE_ACTIONS = ['long', 'ignore']
+DEFAULT_SWEEP_SALE_ACTIONS = ['short', 'ignore']
+DEFAULT_SWEEP_CHAMBER_GROUPS = [[], ['House'], ['Senate']]
 
 
 def list_congressional_trades(limit=50):
@@ -62,6 +67,8 @@ def run_congressional_backtest(
     chambers=None,
     tickers=None,
     source='yahoo',
+    stored_trades=None,
+    market_cache=None,
 ):
     rules = _normalize_rules(
         holding_days=holding_days,
@@ -74,7 +81,7 @@ def run_congressional_backtest(
         tickers=tickers,
         source=source,
     )
-    stored = list_congressional_trades(limit=5000)
+    stored = stored_trades if stored_trades is not None else list_congressional_trades(limit=5000)
     trades = _filter_trades(stored['trades'], rules)[:rules['max_trades']]
     if not stored['trades']:
         return {
@@ -95,7 +102,7 @@ def run_congressional_backtest(
             'message': 'Stored disclosures exist, but none matched the selected chamber, ticker, amount, or action rules.',
         }
 
-    market_cache = {}
+    market_cache = market_cache if market_cache is not None else {}
     returns = []
     details = []
     skipped = []
@@ -127,6 +134,120 @@ def run_congressional_backtest(
         'message': (
             f"Replayed {len(details)} congressional disclosures with {rules['source']} daily closes, "
             f"entry={rules['entry_basis']}, purchases={rules['purchase_action']}, sales={rules['sale_action']}."
+        ),
+    }
+
+
+def sweep_congressional_backtests(
+    holding_days=None,
+    entry_basis=None,
+    purchase_actions=None,
+    sale_actions=None,
+    min_amounts=None,
+    max_trades=250,
+    min_completed_trades=5,
+    top_n=10,
+    chambers=None,
+    chamber_groups=None,
+    tickers=None,
+    source='yahoo',
+    max_combinations=120,
+):
+    stored = list_congressional_trades(limit=5000)
+    if not stored['trades']:
+        return {
+            'ranked': [],
+            'best': None,
+            'evaluated': 0,
+            'total_combinations': 0,
+            'database': stored.get('database'),
+            'message': 'No congressional trades are stored yet. Sync disclosures before running a rule sweep.',
+        }
+
+    holding_values = _normalize_int_list(holding_days, DEFAULT_SWEEP_HOLDING_DAYS, minimum=1, maximum=365)
+    entry_values = _normalize_choice_list(entry_basis, VALID_ENTRY_BASIS, DEFAULT_SWEEP_ENTRY_BASIS)
+    purchase_values = _normalize_choice_list(purchase_actions, VALID_ACTIONS, DEFAULT_SWEEP_PURCHASE_ACTIONS)
+    sale_values = _normalize_choice_list(sale_actions, VALID_ACTIONS, DEFAULT_SWEEP_SALE_ACTIONS)
+    min_amount_values = _normalize_min_amounts(min_amounts)
+    chamber_sets = _normalize_chamber_groups(chamber_groups, chambers)
+    max_combinations = max(1, min(int(max_combinations or 120), 500))
+    top_n = max(1, min(int(top_n or 10), 50))
+    min_completed_trades = max(1, int(min_completed_trades or 5))
+
+    combinations = []
+    for holding in holding_values:
+        for basis in entry_values:
+            for purchase_action in purchase_values:
+                for sale_action in sale_values:
+                    if purchase_action == 'ignore' and sale_action == 'ignore':
+                        continue
+                    for amount in min_amount_values:
+                        for chamber_set in chamber_sets:
+                            combinations.append({
+                                'holding_days': holding,
+                                'entry_basis': basis,
+                                'purchase_action': purchase_action,
+                                'sale_action': sale_action,
+                                'min_amount': amount,
+                                'chambers': chamber_set,
+                            })
+
+    market_cache = {}
+    ranked = []
+    for index, combo in enumerate(combinations[:max_combinations], start=1):
+        result = run_congressional_backtest(
+            holding_days=combo['holding_days'],
+            entry_basis=combo['entry_basis'],
+            purchase_action=combo['purchase_action'],
+            sale_action=combo['sale_action'],
+            max_trades=max_trades,
+            min_amount=combo['min_amount'],
+            chambers=combo['chambers'],
+            tickers=tickers,
+            source=source,
+            stored_trades=stored,
+            market_cache=market_cache,
+        )
+        metrics = result['metrics']
+        completed = metrics.get('total_trades', 0)
+        qualified = completed >= min_completed_trades
+        score = _sweep_score(metrics, qualified=qualified)
+        ranked.append({
+            'rank': 0,
+            'combination': index,
+            'score': score,
+            'qualified': qualified,
+            'rules': result['rules'],
+            'metrics': metrics,
+            'message': result['message'],
+        })
+
+    ranked.sort(
+        key=lambda row: (
+            row['qualified'],
+            row['score'],
+            row['metrics'].get('compounded_return', 0),
+            row['metrics'].get('win_rate', 0),
+            row['metrics'].get('total_trades', 0),
+        ),
+        reverse=True,
+    )
+    for rank, row in enumerate(ranked, start=1):
+        row['rank'] = rank
+
+    capped = len(combinations) > max_combinations
+    top_rows = ranked[:top_n]
+    return {
+        'ranked': top_rows,
+        'best': top_rows[0] if top_rows else None,
+        'evaluated': min(len(combinations), max_combinations),
+        'total_combinations': len(combinations),
+        'capped': capped,
+        'min_completed_trades': min_completed_trades,
+        'database': stored.get('database'),
+        'message': (
+            f"Evaluated {min(len(combinations), max_combinations)} congressional rule combinations"
+            f"{' out of ' + str(len(combinations)) if capped else ''}."
         ),
     }
 
@@ -328,6 +449,76 @@ def _empty_metrics(attempted=0, skipped=0):
         'best_return': 0,
         'worst_return': 0,
     }
+
+
+def _sweep_score(metrics, qualified=False):
+    completed = metrics.get('total_trades', 0)
+    if not completed:
+        return -1
+    compounded = metrics.get('compounded_return', 0)
+    average = metrics.get('average_return', 0)
+    win_rate = metrics.get('win_rate', 0)
+    worst = metrics.get('worst_return', 0)
+    sample_bonus = min(completed / 100, 1) * 0.02
+    quality_penalty = 0 if qualified else 0.25
+    return compounded + average + (win_rate * 0.05) + sample_bonus + min(worst, 0) - quality_penalty
+
+
+def _normalize_int_list(values, default, minimum=1, maximum=365):
+    if values in (None, '', []):
+        return list(default)
+    raw_values = values if isinstance(values, (list, tuple, set)) else [values]
+    normalized = []
+    for value in raw_values:
+        try:
+            parsed = max(minimum, min(int(value), maximum))
+        except (TypeError, ValueError):
+            continue
+        if parsed not in normalized:
+            normalized.append(parsed)
+    return normalized or list(default)
+
+
+def _normalize_choice_list(values, valid_values, default):
+    if values in (None, '', []):
+        return list(default)
+    raw_values = values if isinstance(values, (list, tuple, set)) else [values]
+    normalized = []
+    for value in raw_values:
+        parsed = str(value or '').strip().lower()
+        if parsed in valid_values and parsed not in normalized:
+            normalized.append(parsed)
+    return normalized or list(default)
+
+
+def _normalize_min_amounts(values):
+    if values in (None, '', []):
+        return [None]
+    raw_values = values if isinstance(values, (list, tuple, set)) else [values]
+    normalized = []
+    for value in raw_values:
+        parsed = _parse_amount_number(value)
+        if parsed is None and value not in (None, '', 'none', 'None'):
+            continue
+        if parsed not in normalized:
+            normalized.append(parsed)
+    return normalized or [None]
+
+
+def _normalize_chamber_groups(chamber_groups=None, chambers=None):
+    if chamber_groups:
+        groups = chamber_groups
+    elif chambers:
+        groups = [chambers]
+    else:
+        groups = DEFAULT_SWEEP_CHAMBER_GROUPS
+
+    normalized = []
+    for group in groups:
+        chamber_set = sorted(_normalize_string_set(group))
+        if chamber_set not in normalized:
+            normalized.append(chamber_set)
+    return normalized or [[]]
 
 
 def _skip(trade, reason):

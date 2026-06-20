@@ -12,7 +12,7 @@ from utils.candle_cache import (
     save_cached_candles,
 )
 from utils.coinbase import CoinbaseClient, CoinbaseConfigError
-from utils.congressional import list_congressional_trades, run_congressional_backtest
+from utils.congressional import list_congressional_trades, run_congressional_backtest, sweep_congressional_backtests
 from utils.congressional_ingest_bridge import congressional_disclosure_counts, sync_congressional_disclosures
 from utils.etrade import ETradeClient, ETradeConfigError
 from utils.etrade_collection import (
@@ -141,6 +141,22 @@ congress_ingest_input = api.model('CongressIngestInput', {
     'include_senate': fields.Boolean(required=False, description='Include Senate eFD-derived disclosure ingestion', default=True),
 })
 
+congress_sweep_input = api.model('CongressSweepInput', {
+    'holding_days': fields.List(fields.Integer, required=False, description='Holding windows to test'),
+    'entry_basis': fields.List(fields.String, required=False, description='Entry bases to test'),
+    'purchase_actions': fields.List(fields.String, required=False, description='Purchase actions to test'),
+    'sale_actions': fields.List(fields.String, required=False, description='Sale actions to test'),
+    'min_amounts': fields.List(fields.Float, required=False, description='Minimum amount lower-bounds to test'),
+    'max_trades': fields.Integer(required=False, description='Maximum disclosures per replay', default=250),
+    'min_completed_trades': fields.Integer(required=False, description='Minimum completed trades for a qualified result', default=5),
+    'top_n': fields.Integer(required=False, description='Number of ranked rows to return', default=10),
+    'max_combinations': fields.Integer(required=False, description='Safety cap on combinations to evaluate', default=120),
+    'chambers': fields.List(fields.String, required=False, description='Optional fixed chamber filter'),
+    'chamber_groups': fields.Raw(required=False, description='Optional list of chamber groups, e.g. [[], ["House"], ["Senate"]]'),
+    'tickers': fields.List(fields.String, required=False, description='Optional tickers to include'),
+    'source': fields.String(required=False, description='Market data source', default='yahoo'),
+})
+
 
 @api.route('/health')
 class HealthResource(Resource):
@@ -181,6 +197,7 @@ class HealthResource(Resource):
                 'congress_trades': '/api/v1/congress/trades',
                 'congress_ingest': '/api/v1/congress/ingest',
                 'congress_backtest': '/api/v1/congress/backtest',
+                'congress_sweep': '/api/v1/congress/sweep',
             },
         }, 200
 
@@ -756,6 +773,33 @@ class CongressBacktestResource(Resource):
                 chambers=payload.get('chambers'),
                 tickers=payload.get('tickers'),
                 source=payload.get('source', 'yahoo'),
+            )), 200
+        except ValueError as exc:
+            return {'error': str(exc)}, 400
+
+
+@api.route('/congress/sweep')
+class CongressSweepResource(Resource):
+    @api.expect(congress_sweep_input)
+    @api.response(200, 'Success')
+    @api.response(400, 'Validation Error')
+    def post(self):
+        payload = api.payload or {}
+        try:
+            return _json_ready(sweep_congressional_backtests(
+                holding_days=payload.get('holding_days'),
+                entry_basis=payload.get('entry_basis'),
+                purchase_actions=payload.get('purchase_actions'),
+                sale_actions=payload.get('sale_actions'),
+                min_amounts=payload.get('min_amounts'),
+                max_trades=payload.get('max_trades', 250),
+                min_completed_trades=payload.get('min_completed_trades', 5),
+                top_n=payload.get('top_n', 10),
+                chambers=payload.get('chambers'),
+                chamber_groups=payload.get('chamber_groups'),
+                tickers=payload.get('tickers'),
+                source=payload.get('source', 'yahoo'),
+                max_combinations=payload.get('max_combinations', 120),
             )), 200
         except ValueError as exc:
             return {'error': str(exc)}, 400

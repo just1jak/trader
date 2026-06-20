@@ -200,6 +200,10 @@ Routes:
   - Runs the congressional disclosure replay against configurable Yahoo daily-close rules.
   - Required data caveat: the checked database exists, but it must contain scraped disclosure rows before the replay can produce trades.
 
+- `POST /api/v1/congress/sweep`
+  - Evaluates a bounded matrix of congressional replay rules and returns ranked candidates for paper validation.
+  - Body shape: `{ "holding_days": [3, 5, 10, 20], "entry_basis": ["filing_date", "transaction_date"], "top_n": 8 }`.
+
 ## Frontend Wiring
 
 The React dashboard posts to `POST /api/v1/backtest` and includes a data-source selector:
