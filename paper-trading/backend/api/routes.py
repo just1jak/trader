@@ -122,11 +122,22 @@ paper_mark_input = api.model('PaperMarkInput', {
 
 congress_backtest_input = api.model('CongressBacktestInput', {
     'holding_days': fields.Integer(required=False, description='Holding window after disclosed trade', default=5),
+    'entry_basis': fields.String(required=False, description='filing_date or transaction_date', default='filing_date'),
+    'purchase_action': fields.String(required=False, description='long, short, or ignore', default='long'),
+    'sale_action': fields.String(required=False, description='long, short, or ignore', default='short'),
+    'max_trades': fields.Integer(required=False, description='Maximum disclosures to replay', default=250),
+    'min_amount': fields.Float(required=False, description='Minimum disclosed amount lower-bound'),
+    'chambers': fields.List(fields.String, required=False, description='Optional chambers to include, e.g. House, Senate'),
+    'tickers': fields.List(fields.String, required=False, description='Optional tickers to include'),
+    'source': fields.String(required=False, description='Market data source', default='yahoo'),
 })
 
 congress_ingest_input = api.model('CongressIngestInput', {
     'year': fields.Integer(required=False, description='Disclosure year to import'),
-    'limit': fields.Integer(required=False, description='Maximum House PTR PDFs to download', default=25),
+    'start_year': fields.Integer(required=False, description='First disclosure year to import'),
+    'end_year': fields.Integer(required=False, description='Last disclosure year to import'),
+    'limit': fields.Integer(required=False, description='Per-year/source cap; use 0 for uncapped', default=25),
+    'all_history': fields.Boolean(required=False, description='Import the default full historical window', default=False),
     'include_senate': fields.Boolean(required=False, description='Include Senate eFD-derived disclosure ingestion', default=True),
 })
 
@@ -710,8 +721,11 @@ class CongressIngestResource(Resource):
         try:
             summary = sync_congressional_disclosures(
                 year=payload.get('year'),
-                limit=payload.get('limit') or 25,
+                start_year=payload.get('start_year'),
+                end_year=payload.get('end_year'),
+                limit=payload.get('limit'),
                 include_senate=_to_bool(payload.get('include_senate'), default=True),
+                all_history=_to_bool(payload.get('all_history'), default=False),
             )
             return {
                 'summary': _json_ready(summary),
@@ -728,9 +742,23 @@ class CongressIngestResource(Resource):
 class CongressBacktestResource(Resource):
     @api.expect(congress_backtest_input)
     @api.response(200, 'Success')
+    @api.response(400, 'Validation Error')
     def post(self):
         payload = api.payload or {}
-        return _json_ready(run_congressional_backtest(payload.get('holding_days', 5))), 200
+        try:
+            return _json_ready(run_congressional_backtest(
+                holding_days=payload.get('holding_days', 5),
+                entry_basis=payload.get('entry_basis', 'filing_date'),
+                purchase_action=payload.get('purchase_action', 'long'),
+                sale_action=payload.get('sale_action', 'short'),
+                max_trades=payload.get('max_trades', 250),
+                min_amount=payload.get('min_amount'),
+                chambers=payload.get('chambers'),
+                tickers=payload.get('tickers'),
+                source=payload.get('source', 'yahoo'),
+            )), 200
+        except ValueError as exc:
+            return {'error': str(exc)}, 400
 
 
 def _data_source_status(probe=False):

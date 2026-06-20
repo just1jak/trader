@@ -1182,6 +1182,14 @@ button {
   font-weight: 620;
 }
 
+.provider-field input[type='checkbox'] {
+  width: 18px;
+  min-height: 18px;
+  padding: 0;
+  justify-self: start;
+  accent-color: #63d297;
+}
+
 .field-clear-button {
   min-height: 40px;
   padding: 0 12px;

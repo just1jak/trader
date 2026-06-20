@@ -24,6 +24,9 @@ SENATE_STOCK_WATCHER_DAILY_URL = (
 )
 DATADAWN_STOCK_TRADES_URL = 'https://regs.datadawn.org/openregs/stock_trades.json'
 TRADE_UNIQUE_SQL = 'UNIQUE(filing_date, transaction_date, member, ticker, transaction_type, amount, comment, asset_description)'
+DEFAULT_HISTORY_START_YEAR = 2012
+MAX_DISCLOSURE_LIMIT = 10000
+SENATE_PAGE_SIZE = 500
 
 TICKER_WITH_TYPE_RE = re.compile(
     r'(?P<before>.*?)'
@@ -43,23 +46,60 @@ class CongressIngestError(RuntimeError):
     pass
 
 
-def sync_congressional_disclosures(year=None, limit=25, include_senate=False, db_path=DB_PATH):
-    year = int(year or datetime.utcnow().year)
-    limit = max(1, min(int(limit or 25), 200))
+def sync_congressional_disclosures(
+    year=None,
+    start_year=None,
+    end_year=None,
+    limit=25,
+    include_senate=False,
+    all_history=False,
+    db_path=DB_PATH,
+):
+    start_year, end_year = _year_window(year=year, start_year=start_year, end_year=end_year, all_history=all_history)
+    limit = _normalize_limit(limit, all_history=all_history)
 
-    house = import_house_trades(year=year, limit=limit, db_path=db_path)
-    senate = import_senate_trades(limit=limit, db_path=db_path) if include_senate else {
+    house_summaries = []
+    for disclosure_year in range(end_year, start_year - 1, -1):
+        try:
+            house_summaries.append(import_house_trades(year=disclosure_year, limit=limit, db_path=db_path))
+        except Exception as exc:
+            house_summaries.append({
+                'source': 'house',
+                'status': 'unavailable',
+                'year': disclosure_year,
+                'reports_available': 0,
+                'reports_downloaded': 0,
+                'parsed': 0,
+                'inserted': 0,
+                'errors': [{'year': disclosure_year, 'error': str(exc)[:220]}],
+            })
+    house = _aggregate_house_summaries(house_summaries)
+
+    senate = {
         'source': 'senate',
         'status': 'skipped',
         'inserted': 0,
         'parsed': 0,
         'errors': [],
     }
+    if include_senate:
+        senate = import_senate_trades(limit=limit, start_year=start_year, end_year=end_year, db_path=db_path)
 
     return {
-        'status': 'ok' if house.get('status') == 'ok' else 'partial',
-        'year': year,
+        'status': 'ok' if house.get('status') in {'ok', 'empty'} and senate.get('status') != 'unavailable' else 'partial',
+        'year': end_year,
+        'start_year': start_year,
+        'end_year': end_year,
+        'all_history': bool(all_history),
         'limit': limit,
+        'request': {
+            'year': year,
+            'start_year': start_year,
+            'end_year': end_year,
+            'all_history': bool(all_history),
+            'limit': limit,
+            'include_senate': bool(include_senate),
+        },
         'house': house,
         'senate': senate,
         'counts': disclosure_counts(db_path=db_path),
@@ -68,7 +108,7 @@ def sync_congressional_disclosures(year=None, limit=25, include_senate=False, db
 
 def import_house_trades(year=None, limit=25, db_path=DB_PATH):
     year = int(year or datetime.utcnow().year)
-    limit = max(1, min(int(limit or 25), 200))
+    limit = _normalize_limit(limit, all_history=limit is None)
     ensure_schema(db_path)
 
     response = requests.get(HOUSE_BULK_ZIP_URL.format(year=year), timeout=30)
@@ -76,7 +116,7 @@ def import_house_trades(year=None, limit=25, db_path=DB_PATH):
         raise CongressIngestError(f'House disclosure index fetch failed with HTTP {response.status_code}.')
 
     reports = _house_ptr_reports(response.content)
-    selected = reports[:limit]
+    selected = reports if limit is None else reports[:limit]
     inserted = 0
     parsed = 0
     errors = []
@@ -114,9 +154,10 @@ def import_house_trades(year=None, limit=25, db_path=DB_PATH):
     }
 
 
-def import_senate_trades(limit=25, db_path=DB_PATH):
+def import_senate_trades(limit=25, start_year=None, end_year=None, db_path=DB_PATH):
     ensure_schema(db_path)
-    limit = max(1, min(int(limit or 25), 200))
+    limit = _normalize_limit(limit, all_history=limit is None)
+    start_year, end_year = _year_window(start_year=start_year, end_year=end_year)
     errors = []
 
     try:
@@ -127,7 +168,7 @@ def import_senate_trades(limit=25, db_path=DB_PATH):
         errors.append(f'Official Senate eFD unavailable: {str(exc)[:180]}; using structured fallback.')
 
     try:
-        rows, available = _fetch_datadawn_senate_trades(limit)
+        rows, available = _fetch_datadawn_senate_trades(limit, start_year=start_year, end_year=end_year)
         inserted = 0
         with sqlite3.connect(db_path) as connection:
             for row in rows:
@@ -139,6 +180,8 @@ def import_senate_trades(limit=25, db_path=DB_PATH):
             'reports_downloaded': len(rows),
             'inserted': inserted,
             'parsed': len(rows),
+            'start_year': start_year,
+            'end_year': end_year,
             'errors': errors[:10],
         }
     except Exception as exc:
@@ -159,11 +202,14 @@ def import_senate_trades(limit=25, db_path=DB_PATH):
         }
 
     reports = sorted(
-        (summary for summary in summaries if summary.get('transactions')),
+        (
+            summary for summary in summaries
+            if summary.get('transactions') and _report_in_year_window(summary, start_year=start_year, end_year=end_year)
+        ),
         key=lambda item: (_normalize_date(item.get('date_recieved') or item.get('date_received')), item.get('ptr_link') or ''),
         reverse=True,
     )
-    selected = reports[:limit]
+    selected = reports if limit is None else reports[:limit]
     inserted = 0
     parsed = 0
 
@@ -181,6 +227,8 @@ def import_senate_trades(limit=25, db_path=DB_PATH):
         'reports_downloaded': len(selected),
         'inserted': inserted,
         'parsed': parsed,
+        'start_year': start_year,
+        'end_year': end_year,
         'errors': errors[:10],
     }
 
@@ -266,6 +314,54 @@ def disclosure_counts(db_path=DB_PATH):
         house = connection.execute('select count(*) from house_trades').fetchone()[0]
         senate = connection.execute('select count(*) from senate_trades').fetchone()[0]
     return {'house': house, 'senate': senate, 'total': house + senate}
+
+
+def _year_window(year=None, start_year=None, end_year=None, all_history=False):
+    current_year = datetime.utcnow().year
+    if all_history:
+        start = int(start_year or DEFAULT_HISTORY_START_YEAR)
+        end = int(end_year or current_year)
+    elif start_year is not None or end_year is not None:
+        start = int(start_year or end_year or year or current_year)
+        end = int(end_year or start_year or year or current_year)
+    else:
+        start = end = int(year or current_year)
+
+    if start > end:
+        start, end = end, start
+    end = min(end, current_year)
+    return start, end
+
+
+def _normalize_limit(limit, all_history=False):
+    if limit in (None, '', 'all'):
+        return None if all_history or limit == 'all' else 25
+    value = int(limit)
+    if value <= 0:
+        return None
+    return min(value, MAX_DISCLOSURE_LIMIT)
+
+
+def _aggregate_house_summaries(summaries):
+    errors = []
+    for summary in summaries:
+        errors.extend(summary.get('errors') or [])
+    parsed = sum(summary.get('parsed') or 0 for summary in summaries)
+    unavailable = any(summary.get('status') == 'unavailable' for summary in summaries)
+    status = 'partial' if unavailable else 'ok'
+    if not parsed and not unavailable:
+        status = 'empty'
+
+    return {
+        'source': 'house',
+        'status': status,
+        'years': summaries,
+        'reports_available': sum(summary.get('reports_available') or 0 for summary in summaries),
+        'reports_downloaded': sum(summary.get('reports_downloaded') or 0 for summary in summaries),
+        'parsed': parsed,
+        'inserted': sum(summary.get('inserted') or 0 for summary in summaries),
+        'errors': errors[:20],
+    }
 
 
 def ensure_schema(db_path=DB_PATH):
@@ -423,23 +519,68 @@ def _insert_senate_trade(connection, report, trade):
     return 1 if cursor.rowcount == 1 else 0
 
 
-def _fetch_datadawn_senate_trades(limit):
-    response = requests.get(
-        DATADAWN_STOCK_TRADES_URL,
-        params={
-            '_size': limit,
-            '_sort_desc': 'transaction_date',
-            'chamber': 'Senate',
-            'ticker__notblank': '1',
-        },
-        timeout=30,
-    )
-    if response.status_code >= 400:
-        raise CongressIngestError(f'DataDawn stock_trades returned HTTP {response.status_code}.')
-    payload = response.json()
+def _fetch_datadawn_senate_trades(limit, start_year=None, end_year=None):
+    page_size = min(limit or SENATE_PAGE_SIZE, SENATE_PAGE_SIZE)
+    page_size = max(1, page_size)
+    max_pages = 200 if limit is None else max(1, (limit // page_size) + 8)
+    offset = 0
+    rows = []
+    available = 0
+    seen = set()
+
+    for _ in range(max_pages):
+        response = requests.get(
+            DATADAWN_STOCK_TRADES_URL,
+            params={
+                '_size': page_size,
+                '_offset': offset,
+                '_sort_desc': 'transaction_date',
+                'chamber': 'Senate',
+                'ticker__notblank': '1',
+            },
+            timeout=30,
+        )
+        if response.status_code >= 400:
+            raise CongressIngestError(f'DataDawn stock_trades returned HTTP {response.status_code}.')
+        payload = response.json()
+        page_rows = _datadawn_rows_from_payload(payload)
+        available = max(available, int(payload.get('filtered_table_rows_count') or len(page_rows)))
+        if not page_rows:
+            break
+
+        new_rows = 0
+        page_years = []
+        for row in page_rows:
+            key = row.get('id') or tuple(sorted((str(k), str(v)) for k, v in row.items()))
+            if key in seen:
+                continue
+            seen.add(key)
+            new_rows += 1
+            row_year = _row_year(row)
+            if row_year:
+                page_years.append(row_year)
+            if _row_in_year_window(row, start_year=start_year, end_year=end_year):
+                rows.append(row)
+                if limit is not None and len(rows) >= limit:
+                    return rows[:limit], available
+
+        if new_rows == 0 or len(page_rows) < page_size:
+            break
+        if start_year and page_years and max(page_years) < start_year:
+            break
+        offset += len(page_rows)
+
+    return rows, available
+
+
+def _datadawn_rows_from_payload(payload):
+    raw_rows = payload.get('rows') or []
+    if not raw_rows:
+        return []
+    if isinstance(raw_rows[0], dict):
+        return raw_rows
     columns = payload.get('columns') or []
-    rows = [dict(zip(columns, row)) for row in payload.get('rows') or []]
-    return rows, int(payload.get('filtered_table_rows_count') or len(rows))
+    return [dict(zip(columns, row)) for row in raw_rows]
 
 
 def _insert_senate_datadawn_trade(connection, row):
@@ -570,6 +711,39 @@ def _transaction_type(value):
     return 'Purchase'
 
 
+def _row_in_year_window(row, start_year=None, end_year=None):
+    year = _row_year(row)
+    if not year:
+        return True
+    if start_year is not None and year < int(start_year):
+        return False
+    if end_year is not None and year > int(end_year):
+        return False
+    return True
+
+
+def _row_year(row):
+    for key in ('disclosure_date', 'transaction_date', 'filing_date', 'date_received', 'date_recieved'):
+        normalized = _normalize_date(row.get(key))
+        if normalized[:4].isdigit():
+            return int(normalized[:4])
+    return None
+
+
+def _report_in_year_window(report, start_year=None, end_year=None):
+    year = _row_year({
+        'disclosure_date': report.get('date_recieved') or report.get('date_received'),
+        'transaction_date': report.get('transaction_date'),
+    })
+    if year is None:
+        return True
+    if start_year is not None and year < int(start_year):
+        return False
+    if end_year is not None and year > int(end_year):
+        return False
+    return True
+
+
 def _normalize_date(value):
     value = (value or '').strip()
     if not value:
@@ -588,14 +762,20 @@ def _clean_amount(value):
 
 def main():
     parser = argparse.ArgumentParser(description='Import congressional disclosure trades into SQLite.')
-    parser.add_argument('--year', type=int, default=datetime.utcnow().year)
-    parser.add_argument('--limit', type=int, default=25)
+    parser.add_argument('--year', type=int)
+    parser.add_argument('--start-year', type=int)
+    parser.add_argument('--end-year', type=int)
+    parser.add_argument('--limit', type=int, default=25, help='Per-year/source cap; use 0 for uncapped.')
+    parser.add_argument('--all-history', action='store_true')
     parser.add_argument('--include-senate', action='store_true')
     parser.add_argument('--db', default=str(DB_PATH))
     args = parser.parse_args()
     summary = sync_congressional_disclosures(
         year=args.year,
+        start_year=args.start_year,
+        end_year=args.end_year,
         limit=args.limit,
+        all_history=args.all_history,
         include_senate=args.include_senate,
         db_path=Path(args.db),
     )

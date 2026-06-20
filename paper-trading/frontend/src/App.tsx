@@ -322,6 +322,7 @@ type OptionsResult = {
 
 type CongressTrade = {
   chamber: string;
+  filing_date: string;
   transaction_date: string;
   member: string;
   ticker: string;
@@ -329,9 +330,31 @@ type CongressTrade = {
   amount: string;
 };
 
+type CongressAction = 'long' | 'short' | 'ignore';
+type CongressEntryBasis = 'filing_date' | 'transaction_date';
+type CongressChamberFilter = 'all' | 'House' | 'Senate';
+
+type CongressForm = {
+  startYear: string;
+  endYear: string;
+  limit: string;
+  allHistory: boolean;
+  includeSenate: boolean;
+  holdingDays: string;
+  entryBasis: CongressEntryBasis;
+  purchaseAction: CongressAction;
+  saleAction: CongressAction;
+  maxTrades: string;
+  minAmount: string;
+  chamber: CongressChamberFilter;
+  tickers: string;
+};
+
 type CongressResult = {
   metrics: Record<string, number>;
   trade_details: Array<Record<string, unknown>>;
+  skipped_details?: Array<Record<string, unknown>>;
+  rules?: Record<string, unknown>;
   holding_days: number;
   message: string;
 };
@@ -339,7 +362,11 @@ type CongressResult = {
 type CongressIngestSummary = {
   status: string;
   year: number;
-  limit: number;
+  start_year: number;
+  end_year: number;
+  all_history: boolean;
+  limit: number | null;
+  request?: Record<string, unknown>;
   counts: {
     house: number;
     senate: number;
@@ -351,6 +378,7 @@ type CongressIngestSummary = {
     reports_downloaded: number;
     parsed: number;
     inserted: number;
+    years?: Array<Record<string, unknown>>;
     errors: Array<Record<string, unknown>>;
   };
   senate: {
@@ -715,6 +743,7 @@ const defaultSourceWorkbenchForm: SourceWorkbenchForm = {
 
 function App() {
   const { callApi, loading, error, clearError } = useApi();
+  const currentYear = new Date().getFullYear();
   const [activeNav, setActiveNav] = useState('Backtest');
   const [formData, setFormData] = useState<BacktestForm>({
     symbol: 'ES',
@@ -781,7 +810,21 @@ function App() {
     multiplier: '100',
   });
   const [optionResults, setOptionResults] = useState<OptionsResult | null>(null);
-  const [congressHoldingDays, setCongressHoldingDays] = useState('5');
+  const [congressForm, setCongressForm] = useState<CongressForm>({
+    startYear: String(currentYear),
+    endYear: String(currentYear),
+    limit: '100',
+    allHistory: false,
+    includeSenate: true,
+    holdingDays: '5',
+    entryBasis: 'filing_date',
+    purchaseAction: 'long',
+    saleAction: 'short',
+    maxTrades: '250',
+    minAmount: '',
+    chamber: 'all',
+    tickers: '',
+  });
   const [congressTrades, setCongressTrades] = useState<CongressTrade[]>([]);
   const [congressResult, setCongressResult] = useState<CongressResult | null>(null);
   const [congressIngestResult, setCongressIngestResult] = useState<CongressIngestSummary | null>(null);
@@ -1443,10 +1486,27 @@ function App() {
     return data;
   };
 
+  const updateCongressForm = (field: keyof CongressForm, value: string | boolean) => {
+    setCongressForm((previous) => ({ ...previous, [field]: value }));
+  };
+
   const runCongressBacktest = async () => {
     const data = await callApi<CongressResult>('/api/v1/congress/backtest', {
       method: 'POST',
-      body: JSON.stringify({ holding_days: Number(congressHoldingDays) }),
+      body: JSON.stringify({
+        holding_days: Number(congressForm.holdingDays || 5),
+        entry_basis: congressForm.entryBasis,
+        purchase_action: congressForm.purchaseAction,
+        sale_action: congressForm.saleAction,
+        max_trades: Number(congressForm.maxTrades || 250),
+        min_amount: congressForm.minAmount ? Number(congressForm.minAmount) : undefined,
+        chambers: congressForm.chamber === 'all' ? [] : [congressForm.chamber],
+        tickers: congressForm.tickers
+          .split(',')
+          .map((ticker) => ticker.trim().toUpperCase())
+          .filter(Boolean),
+        source: 'yahoo',
+      }),
     });
     if (data?.metrics) {
       setCongressResult(data);
@@ -1456,13 +1516,19 @@ function App() {
 
   const syncCongressTrades = async () => {
     setCongressSyncing(true);
-    const year = new Date().getFullYear();
     try {
       const data = await callApi<{ summary: CongressIngestSummary; trades: { trades: CongressTrade[] }; message: string }>(
         '/api/v1/congress/ingest',
         {
           method: 'POST',
-          body: JSON.stringify({ year, limit: 25, include_senate: true }),
+          body: JSON.stringify({
+            year: congressForm.allHistory ? undefined : Number(congressForm.endYear || currentYear),
+            start_year: congressForm.allHistory ? undefined : (congressForm.startYear ? Number(congressForm.startYear) : undefined),
+            end_year: congressForm.endYear ? Number(congressForm.endYear) : undefined,
+            limit: congressForm.limit === '' ? undefined : Number(congressForm.limit),
+            all_history: congressForm.allHistory,
+            include_senate: congressForm.includeSenate,
+          }),
         },
       );
       if (data?.summary) {
@@ -1538,7 +1604,7 @@ function App() {
             backendStrategies={backendStrategies}
             collectLiveQuote={collectLiveQuote}
             completeEtradeOAuth={completeEtradeOAuth}
-            congressHoldingDays={congressHoldingDays}
+            congressForm={congressForm}
             congressIngestResult={congressIngestResult}
             congressResult={congressResult}
             congressSyncing={congressSyncing}
@@ -1569,7 +1635,6 @@ function App() {
             clearProviderField={clearProviderField}
             saveProviderSettings={saveProviderSettings}
             savingProvider={savingProvider}
-            setCongressHoldingDays={setCongressHoldingDays}
             setLiveSymbols={setLiveSymbols}
             setOauthVerifier={setOauthVerifier}
             selectedPaperSessionId={selectedPaperSessionId}
@@ -1593,6 +1658,7 @@ function App() {
             updateOptionField={updateOptionField}
             updatePaperField={updatePaperField}
             updateProviderField={updateProviderField}
+            updateCongressForm={updateCongressForm}
             updateSourceWorkbenchField={updateSourceWorkbenchField}
             loadSourceDiagnostics={loadSourceDiagnostics}
             loadCandleCache={loadCandleCache}
@@ -1843,7 +1909,7 @@ function ModulePanel({
   backendStrategies,
   collectLiveQuote,
   completeEtradeOAuth,
-  congressHoldingDays,
+  congressForm,
   congressIngestResult,
   congressResult,
   congressSyncing,
@@ -1874,7 +1940,6 @@ function ModulePanel({
   clearProviderField,
   saveProviderSettings,
   savingProvider,
-  setCongressHoldingDays,
   setLiveSymbols,
   setOauthVerifier,
   selectedPaperSessionId,
@@ -1898,6 +1963,7 @@ function ModulePanel({
   updateOptionField,
   updatePaperField,
   updateProviderField,
+  updateCongressForm,
   updateSourceWorkbenchField,
   loadSourceDiagnostics,
   loadCandleCache,
@@ -1910,7 +1976,7 @@ function ModulePanel({
   collectLiveQuote: () => void;
   completeEtradeOAuth: () => void;
   createPaperSession: () => void;
-  congressHoldingDays: string;
+  congressForm: CongressForm;
   congressIngestResult: CongressIngestSummary | null;
   congressResult: CongressResult | null;
   congressSyncing: boolean;
@@ -1940,7 +2006,6 @@ function ModulePanel({
   clearProviderField: (providerKey: string, fieldKey: string) => void;
   saveProviderSettings: (providerKey: string) => void;
   savingProvider: string | null;
-  setCongressHoldingDays: (value: string) => void;
   setLiveSymbols: (value: string) => void;
   setOauthVerifier: (value: string) => void;
   selectedPaperSessionId: number | null;
@@ -1964,6 +2029,7 @@ function ModulePanel({
   updateOptionField: (field: keyof OptionsForm, value: string) => void;
   updatePaperField: (field: keyof PaperForm, value: string) => void;
   updateProviderField: (providerKey: string, fieldKey: string, value: string) => void;
+  updateCongressForm: (field: keyof CongressForm, value: string | boolean) => void;
   updateSourceWorkbenchField: (field: keyof SourceWorkbenchForm, value: string) => void;
   loadSourceDiagnostics: (probe?: boolean) => void;
   loadCandleCache: () => void;
@@ -2540,13 +2606,121 @@ function ModulePanel({
           <>
             <article className="module-card">
               <h3>Congressional disclosure replay</h3>
+              <label className="provider-field">
+                <span>Start year</span>
+                <input
+                  type="number"
+                  value={congressForm.startYear}
+                  disabled={congressForm.allHistory}
+                  onChange={(event) => updateCongressForm('startYear', event.target.value)}
+                />
+              </label>
+              <label className="provider-field">
+                <span>End year</span>
+                <input
+                  type="number"
+                  value={congressForm.endYear}
+                  onChange={(event) => updateCongressForm('endYear', event.target.value)}
+                />
+              </label>
+              <label className="provider-field">
+                <span>Disclosure cap</span>
+                <input
+                  type="number"
+                  value={congressForm.limit}
+                  onChange={(event) => updateCongressForm('limit', event.target.value)}
+                />
+              </label>
+              <label className="provider-field">
+                <span>All history</span>
+                <input
+                  type="checkbox"
+                  checked={congressForm.allHistory}
+                  onChange={(event) => updateCongressForm('allHistory', event.target.checked)}
+                />
+              </label>
+              <label className="provider-field">
+                <span>Senate</span>
+                <input
+                  type="checkbox"
+                  checked={congressForm.includeSenate}
+                  onChange={(event) => updateCongressForm('includeSenate', event.target.checked)}
+                />
+              </label>
               <button className="reset-button" type="button" onClick={syncCongressTrades} disabled={congressSyncing}>
                 <DownloadIcon />
                 {congressSyncing ? 'Syncing' : 'Sync disclosures'}
               </button>
               <label className="provider-field">
                 <span>Holding days</span>
-                <input value={congressHoldingDays} onChange={(event) => setCongressHoldingDays(event.target.value)} />
+                <input
+                  type="number"
+                  value={congressForm.holdingDays}
+                  onChange={(event) => updateCongressForm('holdingDays', event.target.value)}
+                />
+              </label>
+              <label className="provider-field">
+                <span>Entry basis</span>
+                <select
+                  value={congressForm.entryBasis}
+                  onChange={(event) => updateCongressForm('entryBasis', event.target.value as CongressEntryBasis)}
+                >
+                  <option value="filing_date">Filing date</option>
+                  <option value="transaction_date">Transaction date</option>
+                </select>
+              </label>
+              <label className="provider-field">
+                <span>Purchases</span>
+                <select
+                  value={congressForm.purchaseAction}
+                  onChange={(event) => updateCongressForm('purchaseAction', event.target.value as CongressAction)}
+                >
+                  <option value="long">Long</option>
+                  <option value="short">Short</option>
+                  <option value="ignore">Ignore</option>
+                </select>
+              </label>
+              <label className="provider-field">
+                <span>Sales</span>
+                <select
+                  value={congressForm.saleAction}
+                  onChange={(event) => updateCongressForm('saleAction', event.target.value as CongressAction)}
+                >
+                  <option value="short">Short</option>
+                  <option value="long">Long</option>
+                  <option value="ignore">Ignore</option>
+                </select>
+              </label>
+              <label className="provider-field">
+                <span>Max trades</span>
+                <input
+                  type="number"
+                  value={congressForm.maxTrades}
+                  onChange={(event) => updateCongressForm('maxTrades', event.target.value)}
+                />
+              </label>
+              <label className="provider-field">
+                <span>Min amount</span>
+                <input
+                  type="number"
+                  value={congressForm.minAmount}
+                  onChange={(event) => updateCongressForm('minAmount', event.target.value)}
+                />
+              </label>
+              <label className="provider-field">
+                <span>Chamber</span>
+                <select
+                  value={congressForm.chamber}
+                  onChange={(event) => updateCongressForm('chamber', event.target.value as CongressChamberFilter)}
+                >
+                  <option value="all">All</option>
+                  <option value="House">House</option>
+                  <option value="Senate">Senate</option>
+                </select>
+              </label>
+              <label className="provider-field">
+                <span>Tickers</span>
+                <input value={congressForm.tickers} onChange={(event) => updateCongressForm('tickers', event.target.value)} />
               </label>
               <button className="run-button" type="button" onClick={runCongressBacktest}>
                 <PlayIcon />
@@ -2560,7 +2734,10 @@ function ModulePanel({
               {congressResult ? (
                 <ul>
                   <li><span>Total trades</span><strong>{String(congressResult.metrics.total_trades ?? 0)}</strong></li>
+                  <li><span>Attempted</span><strong>{String(congressResult.metrics.attempted_trades ?? 0)}</strong></li>
+                  <li><span>Skipped</span><strong>{String(congressResult.metrics.skipped_trades ?? 0)}</strong></li>
                   <li><span>Total return</span><strong>{toPercent(congressResult.metrics.total_return)}</strong></li>
+                  <li><span>Compounded</span><strong>{toPercent(congressResult.metrics.compounded_return)}</strong></li>
                   <li><span>Average return</span><strong>{toPercent(congressResult.metrics.average_return)}</strong></li>
                   <li><span>Win rate</span><strong>{toPercent(congressResult.metrics.win_rate)}</strong></li>
                 </ul>
@@ -2574,6 +2751,8 @@ function ModulePanel({
               {congressIngestResult ? (
                 <ul>
                   <li><span>Total rows</span><strong>{congressIngestResult.counts.total.toLocaleString()}</strong></li>
+                  <li><span>Years</span><strong>{congressIngestResult.start_year} to {congressIngestResult.end_year}</strong></li>
+                  <li><span>Cap</span><strong>{congressIngestResult.limit ?? 'All'}</strong></li>
                   <li><span>House parsed</span><strong>{congressIngestResult.house.parsed.toLocaleString()}</strong></li>
                   <li><span>House inserted</span><strong>{congressIngestResult.house.inserted.toLocaleString()}</strong></li>
                   <li><span>Senate status</span><strong>{congressIngestResult.senate.status.replace(/_/g, ' ')}</strong></li>
@@ -3165,7 +3344,7 @@ function moduleDescription(activeNav: string) {
     'Data Sources': 'Probe every configured source, inspect row counts, and see source-specific errors before trusting a backtest.',
     'Paper Trade': 'Create paper-only sessions, mark them with live E*TRADE quotes or manual prices, and compare the future equity trail against your backtest thesis.',
     Options: 'Replay option payoff strategies against the same underlying candle sources used by the backtest engine.',
-    Congress: 'Review locally stored congressional disclosures and replay them against deterministic futures proxies.',
+    Congress: 'Review locally stored congressional disclosures and replay them against configurable Yahoo daily-close rules.',
     Strategies: 'The frontend reads the backend strategy registry so the available modules are no longer just decorative labels.',
     Results: 'This view reflects the latest successful backtest response currently held in app state.',
     Exports: 'CSV export is wired to the visible trades after search and win/loss filtering.',
