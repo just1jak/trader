@@ -59,9 +59,32 @@ def sync_congressional_disclosures(
     limit = _normalize_limit(limit, all_history=all_history)
 
     house_summaries = []
-    for disclosure_year in range(end_year, start_year - 1, -1):
+    house_years = [end_year] if start_year == end_year else []
+    house_use_structured = True
+    if start_year != end_year:
         try:
-            house_summaries.append(import_house_trades(year=disclosure_year, limit=limit, db_path=db_path))
+            house_summaries.append(
+                import_house_datadawn_trades(
+                    limit=limit,
+                    start_year=start_year,
+                    end_year=end_year,
+                    db_path=db_path,
+                )
+            )
+        except Exception as exc:
+            house_years = list(range(end_year, start_year - 1, -1))
+            house_use_structured = False
+
+    for disclosure_year in house_years:
+        try:
+            house_summaries.append(
+                import_house_trades(
+                    year=disclosure_year,
+                    limit=limit,
+                    db_path=db_path,
+                    use_structured=house_use_structured,
+                )
+            )
         except Exception as exc:
             house_summaries.append({
                 'source': 'house',
@@ -106,10 +129,19 @@ def sync_congressional_disclosures(
     }
 
 
-def import_house_trades(year=None, limit=25, db_path=DB_PATH):
+def import_house_trades(year=None, limit=25, db_path=DB_PATH, use_structured=True):
     year = int(year or datetime.utcnow().year)
     limit = _normalize_limit(limit, all_history=limit is None)
     ensure_schema(db_path)
+    errors = []
+
+    if use_structured:
+        try:
+            structured = import_house_datadawn_trades(limit=limit, start_year=year, end_year=year, db_path=db_path)
+            if structured.get('parsed'):
+                return structured
+        except Exception as exc:
+            errors.append({'source': 'datadawn_openregs', 'year': year, 'error': str(exc)[:220]})
 
     response = requests.get(HOUSE_BULK_ZIP_URL.format(year=year), timeout=30)
     if response.status_code >= 400:
@@ -119,7 +151,6 @@ def import_house_trades(year=None, limit=25, db_path=DB_PATH):
     selected = reports if limit is None else reports[:limit]
     inserted = 0
     parsed = 0
-    errors = []
 
     with sqlite3.connect(db_path) as connection:
         for report in selected:
@@ -137,6 +168,7 @@ def import_house_trades(year=None, limit=25, db_path=DB_PATH):
                     inserted += _insert_house_trade(connection, report, trade)
             except Exception as exc:
                 errors.append({
+                    'source': 'house_ptr_pdf',
                     'doc_id': report.get('doc_id'),
                     'member': report.get('member'),
                     'error': str(exc)[:220],
@@ -154,6 +186,29 @@ def import_house_trades(year=None, limit=25, db_path=DB_PATH):
     }
 
 
+def import_house_datadawn_trades(limit=25, start_year=None, end_year=None, db_path=DB_PATH):
+    ensure_schema(db_path)
+    limit = _normalize_limit(limit, all_history=limit is None)
+    start_year, end_year = _year_window(start_year=start_year, end_year=end_year)
+    rows, available = _fetch_datadawn_stock_trades('House', limit, start_year=start_year, end_year=end_year)
+    inserted = 0
+    with sqlite3.connect(db_path) as connection:
+        for row in rows:
+            inserted += _insert_house_datadawn_trade(connection, row)
+    return {
+        'source': 'datadawn_openregs_house',
+        'status': 'ok' if rows else 'empty',
+        'year': end_year,
+        'start_year': start_year,
+        'end_year': end_year,
+        'reports_available': available,
+        'reports_downloaded': len(rows),
+        'parsed': len(rows),
+        'inserted': inserted,
+        'errors': [],
+    }
+
+
 def import_senate_trades(limit=25, start_year=None, end_year=None, db_path=DB_PATH):
     ensure_schema(db_path)
     limit = _normalize_limit(limit, all_history=limit is None)
@@ -168,7 +223,7 @@ def import_senate_trades(limit=25, start_year=None, end_year=None, db_path=DB_PA
         errors.append(f'Official Senate eFD unavailable: {str(exc)[:180]}; using structured fallback.')
 
     try:
-        rows, available = _fetch_datadawn_senate_trades(limit, start_year=start_year, end_year=end_year)
+        rows, available = _fetch_datadawn_stock_trades('Senate', limit, start_year=start_year, end_year=end_year)
         inserted = 0
         with sqlite3.connect(db_path) as connection:
             for row in rows:
@@ -268,6 +323,8 @@ def parse_house_ptr_text(text):
 
         match = TICKER_WITH_TYPE_RE.search(candidate)
         if not match:
+            continue
+        if (match.group('asset_type') or '').upper() != 'ST':
             continue
 
         detail = (match.group('after') or '').strip()
@@ -520,24 +577,32 @@ def _insert_senate_trade(connection, report, trade):
 
 
 def _fetch_datadawn_senate_trades(limit, start_year=None, end_year=None):
-    page_size = min(limit or SENATE_PAGE_SIZE, SENATE_PAGE_SIZE)
+    return _fetch_datadawn_stock_trades('Senate', limit, start_year=start_year, end_year=end_year)
+
+
+def _fetch_datadawn_stock_trades(chamber, limit, start_year=None, end_year=None):
+    has_year_filter = start_year is not None or end_year is not None
+    page_size = SENATE_PAGE_SIZE if has_year_filter else min(limit or SENATE_PAGE_SIZE, SENATE_PAGE_SIZE)
     page_size = max(1, page_size)
-    max_pages = 200 if limit is None else max(1, (limit // page_size) + 8)
-    offset = 0
+    max_pages = 200 if limit is None or has_year_filter else max(1, (limit // page_size) + 8)
+    next_cursor = None
     rows = []
     available = 0
     seen = set()
 
     for _ in range(max_pages):
+        params = {
+            '_size': page_size,
+            '_sort_desc': 'transaction_date',
+            'chamber': chamber,
+            'ticker__notblank': '1',
+        }
+        if next_cursor:
+            params['_next'] = next_cursor
+
         response = requests.get(
             DATADAWN_STOCK_TRADES_URL,
-            params={
-                '_size': page_size,
-                '_offset': offset,
-                '_sort_desc': 'transaction_date',
-                'chamber': 'Senate',
-                'ticker__notblank': '1',
-            },
+            params=params,
             timeout=30,
         )
         if response.status_code >= 400:
@@ -568,7 +633,9 @@ def _fetch_datadawn_senate_trades(limit, start_year=None, end_year=None):
             break
         if start_year and page_years and max(page_years) < start_year:
             break
-        offset += len(page_rows)
+        next_cursor = payload.get('next')
+        if not next_cursor:
+            break
 
     return rows, available
 
@@ -581,6 +648,57 @@ def _datadawn_rows_from_payload(payload):
         return raw_rows
     columns = payload.get('columns') or []
     return [dict(zip(columns, row)) for row in raw_rows]
+
+
+def _insert_house_datadawn_trade(connection, row):
+    ticker = _normalize_ticker(row.get('ticker'))
+    if not _looks_like_ticker(ticker):
+        return 0
+
+    comment_parts = [
+        'source=datadawn_openregs',
+        f"source_url={row.get('source_url') or ''}",
+        f"datadawn_id={row.get('id') or ''}",
+    ]
+    if row.get('doc_id'):
+        comment_parts.append(f"doc_id={row.get('doc_id')}")
+    if row.get('owner'):
+        comment_parts.append(f"owner={row.get('owner')}")
+    if row.get('asset_type'):
+        comment_parts.append(f"asset_type={row.get('asset_type')}")
+    if row.get('bioguide_id'):
+        comment_parts.append(f"bioguide={row.get('bioguide_id')}")
+    if row.get('cik'):
+        comment_parts.append(f"cik={row.get('cik')}")
+    if row.get('comment'):
+        comment_parts.append(f"comment={_clean_html(row.get('comment'))}")
+
+    cursor = connection.execute(
+        """
+        insert into house_trades
+          (filing_date, transaction_date, member, district, ticker,
+           asset_description, transaction_type, amount, comment)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        on conflict(filing_date, transaction_date, member, ticker, transaction_type, amount, comment, asset_description)
+        do update set
+          district = excluded.district,
+          asset_description = excluded.asset_description,
+          amount = excluded.amount,
+          comment = excluded.comment
+        """,
+        (
+            _normalize_date(row.get('disclosure_date')),
+            _normalize_date(row.get('transaction_date')),
+            row.get('member_name') or '',
+            row.get('state_district') or '',
+            ticker,
+            _clean_html(row.get('asset_description') or ticker)[:240],
+            _transaction_type(row.get('transaction_type')),
+            _clean_amount(row.get('amount_range')),
+            '; '.join(part for part in comment_parts if part)[:500],
+        ),
+    )
+    return 1 if cursor.rowcount == 1 else 0
 
 
 def _insert_senate_datadawn_trade(connection, row):

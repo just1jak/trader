@@ -134,8 +134,41 @@ def test_ingest_window_and_limit_helpers():
     assert ingest._datadawn_rows_from_payload({"columns": ["ticker"], "rows": [["AAPL"]]}) == [{"ticker": "AAPL"}]
 
 
+def test_house_datadawn_insert_and_pdf_stock_filter():
+    ingest = load_ingest_module()
+    with tempfile.TemporaryDirectory() as temp_dir:
+        db_path = Path(temp_dir) / "congress.db"
+        ingest.ensure_schema(db_path)
+        with sqlite3.connect(db_path) as connection:
+            inserted = ingest._insert_house_datadawn_trade(connection, {
+                "id": 42,
+                "member_name": "Rep Example",
+                "transaction_date": "2024-01-02",
+                "disclosure_date": "2024-01-05",
+                "ticker": "AAPL",
+                "asset_description": "Apple Inc. (AAPL) [ST]",
+                "transaction_type": "Purchase",
+                "amount_range": "$1,001 - $15,000",
+                "owner": "Self",
+                "source_url": "https://example.test/ptr.pdf",
+                "state_district": "CA01",
+                "doc_id": "20000001",
+            })
+            row = connection.execute("select member, district, ticker, transaction_type from house_trades").fetchone()
+
+    assert inserted == 1
+    assert row == ("Rep Example", "CA01", "AAPL", "Purchase")
+
+    trades = ingest.parse_house_ptr_text(
+        "Apple Inc. (AAPL) [ST] P 01/02/202401/03/2024$1,001 - $15,000\n"
+        "REOF XXVI, LLC [AB] P 01/02/202401/03/2024$250,001 - $500,000"
+    )
+    assert [trade["ticker"] for trade in trades] == ["AAPL"]
+
+
 if __name__ == "__main__":
     test_congressional_replay_buy_sell_rules()
     test_congressional_replay_can_ignore_sales()
     test_ingest_window_and_limit_helpers()
+    test_house_datadawn_insert_and_pdf_stock_filter()
     print("Congressional replay tests passed")

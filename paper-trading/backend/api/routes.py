@@ -730,7 +730,7 @@ class CongressIngestResource(Resource):
             return {
                 'summary': _json_ready(summary),
                 'trades': list_congressional_trades(limit=25),
-                'message': 'Congressional disclosure sync completed from House PTR PDFs and Senate eFD-derived data.',
+                'message': 'Congressional disclosure sync completed from structured House/Senate stock disclosures with official PDF fallback.',
             }, 200
         except ValueError as exc:
             return {'error': str(exc)}, 400

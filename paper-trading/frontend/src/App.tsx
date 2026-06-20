@@ -2758,7 +2758,7 @@ function ModulePanel({
                   <li><span>Senate status</span><strong>{congressIngestResult.senate.status.replace(/_/g, ' ')}</strong></li>
                 </ul>
               ) : (
-                <p>Sync recent House PTR PDFs and Senate eFD-derived summaries before replaying disclosures.</p>
+                <p>Sync structured House/Senate stock disclosures before replaying trades.</p>
               )}
             </article>
 
